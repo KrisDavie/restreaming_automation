@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALttP Restream – Control Dashboard</title>
+    <style>
+        :root {
+            --bg: #1e1e2e; --bg2: #2a2a3e; --bg3: #313147;
+            --text: #cdd6f4; --text2: #a6adc8;
+            --green: #a6e3a1; --blue: #89b4fa; --red: #f38ba8;
+            --purple: #cba6f7; --yellow: #f9e2af; --teal: #94e2d5;
+            --border: #45475a; --radius: 8px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        header {
+            background: linear-gradient(135deg, #0f3460, #533483);
+            padding: 16px 24px; display: flex; align-items: center; gap: 16px;
+        }
+        header h1 { font-size: 20px; font-weight: 700; }
+        header .ws-status { margin-left: auto; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .dot.on { background: var(--green); } .dot.off { background: var(--red); }
+
+        .top-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px 20px 0; max-width: 1800px; margin: 0 auto; }
+        .bottom-section { padding: 16px 20px 20px; max-width: 1800px; margin: 0 auto; }
+        .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+        .card-header { padding: 10px 16px; font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+        .card-header.green  { background: #2e7d3222; border-left: 3px solid var(--green); }
+        .card-header.blue   { background: #1565c022; border-left: 3px solid var(--blue); }
+        .card-header.purple { background: #6a1b9a22; border-left: 3px solid var(--purple); }
+        .card-header.red    { background: #c6282822; border-left: 3px solid var(--red); }
+        .card-header.teal   { background: #00796b22; border-left: 3px solid var(--teal); }
+        .card-header.yellow { background: #f57f1722; border-left: 3px solid var(--yellow); }
+        .card-body { padding: 14px 16px; }
+        label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 3px; }
+        input, select { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg3); color: var(--text); font-size: 13px; outline: none; margin-bottom: 8px; }
+        input:focus { border-color: var(--blue); }
+        .row { display: flex; gap: 8px; align-items: end; }
+        .row > * { flex: 1; }
+        button { padding: 7px 14px; border: none; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; color: #1e1e2e; transition: opacity 0.15s; }
+        button:hover { opacity: 0.85; } button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .bg { background: var(--green); } .bb { background: var(--blue); }
+        .br { background: var(--red); }   .bp { background: var(--purple); }
+        .by { background: var(--yellow); } .bt { background: var(--teal); }
+        .btn-group { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+        .btn-sm { padding: 5px 10px; font-size: 11px; }
+        .btn-active { outline: 2px solid var(--text); outline-offset: 1px; }
+        .inline-input { width: 80px !important; display: inline-block; margin: 0 !important; padding: 4px 8px !important; font-size: 12px !important; }
+        .nudge-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-top: 8px; }
+        .log { font-family: 'Cascadia Code', monospace; font-size: 11px; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 8px; max-height: 120px; overflow-y: auto; color: var(--text2); white-space: pre-wrap; margin-top: 10px; }
+        .slot-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin-bottom: 8px; position: relative; }
+        .slot-box h4 { font-size: 13px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+        .preview-img { width: 100%; border-radius: 4px; margin-top: 8px; display: none; border: 1px solid var(--border); background: var(--bg3); }
+        .preview-label { font-size: 11px; color: var(--text2); margin-top: 4px; }
+        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-overlay { position: absolute; inset: 0; background: rgba(30,30,46,0.75); display: none; align-items: center; justify-content: center; border-radius: var(--radius); z-index: 5; font-size: 13px; gap: 8px; color: var(--text); }
+
+        /* Crop canvas */
+        .crop-container { position: relative; margin-top: 8px; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+        .crop-container canvas { display: block; max-width: 100%; }
+        .crop-placeholder { color: var(--text2); font-size: 13px; padding: 40px; text-align: center; }
+
+        /* Magnifier */
+        .magnifier { position: absolute; width: 160px; height: 160px; border: 2px solid var(--blue); border-radius: 4px; pointer-events: none; display: none; background-repeat: no-repeat; box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 10; image-rendering: pixelated; }
+        .magnifier-xhair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: none; }
+        .magnifier-xhair::before, .magnifier-xhair::after { content: ''; position: absolute; background: rgba(255,0,0,0.7); }
+        .magnifier-xhair::before { width: 1px; height: 100%; left: 50%; }
+        .magnifier-xhair::after  { height: 1px; width: 100%; top: 50%; }
+
+        .crop-legend { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; flex-wrap: wrap; }
+        .crop-legend-item { display: flex; align-items: center; gap: 5px; }
+        .crop-legend-swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.3); }
+        .coords-bar { display: flex; gap: 12px; font-family: monospace; font-size: 12px; color: var(--text2); margin-top: 6px; flex-wrap: wrap; }
+        .coords-bar span { background: var(--bg3); padding: 2px 8px; border-radius: 3px; }
+        .audio-btn.active { outline: 2px solid var(--green); outline-offset: 1px; }
+
+        /* Crop input fields */
+        .crop-inputs { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-top: 8px; }
+        .crop-inputs label { margin: 0; }
+        .crop-inputs input { margin-bottom: 0; }
+
+        /* Scene preview */
+        .scene-preview-img { width: 100%; border-radius: 4px; border: 1px solid var(--border); background: var(--bg3); }
+
+        /* Preset row */
+        .preset-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
+        .preset-row:last-child { border-bottom: none; }
+        .preset-row .name { font-weight: 600; flex: 1; }
+        .preset-row .channel { color: var(--text2); }
+        .preset-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; background: var(--bg3); }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🎮 ALttP Restream Dashboard</h1>
+        <div class="ws-status">
+            <span class="dot off" id="wsDot"></span>
+            <span id="wsText">WS Disconnected</span>
+        </div>
+    </header>
+
+    <div class="top-grid">
+        <!-- LEFT: INGEST -->
+        <div class="card">
+            <div class="card-header green">
+                Stream Ingest
+                <span style="font-size:11px;color:var(--text2);margin-left:auto" id="ingestSlotCount">2 Slots</span>
+            </div>
+            <div class="card-body">
+                <div class="btn-group" style="margin-bottom:8px" id="ingestTabs"></div>
+                <div id="ingestSlots"></div>
+                <div class="log" id="iLog"></div>
+            </div>
+        </div>
+
+        <!-- RIGHT: OBS + Audio + Sync + Scene Preview -->
+        <div style="display:flex;flex-direction:column;gap:16px;">
+            <div class="card">
+                <div class="card-header red">OBS Control</div>
+                <div class="card-body">
+                    <div class="slot-box">
+                        <h4><span class="dot off" id="obsDot"></span> OBS WebSocket</h4>
+                        <div class="btn-group">
+                            <button class="bg btn-sm" onclick="obsConn()">Connect</button>
+                            <button class="br btn-sm" onclick="obsDisc()">Disconnect</button>
+                            <button class="bb btn-sm" onclick="obsInit()">🔄 Re-provision</button>
+                        </div>
+                    </div>
+                    <label>Scene</label>
+                    <div class="row">
+                        <select id="scSel"></select>
+                        <div style="flex:0"><button class="bb btn-sm" onclick="switchSc()">Switch</button></div>
+                        <div style="flex:0"><button class="bb btn-sm" onclick="loadSc()">↻</button></div>
+                    </div>
+                    <div class="btn-group" style="margin-top:10px">
+                        <button class="bg" onclick="apiPost('/api/obs/stream/start').then(()=>logMsg($('#oLog'),'Stream started'))">▶ Start Stream</button>
+                        <button class="br" onclick="apiPost('/api/obs/stream/stop').then(()=>logMsg($('#oLog'),'Stream stopped'))">■ Stop Stream</button>
+                    </div>
+                    <div class="log" id="oLog"></div>
+                </div>
+            </div>
+
+            <!-- Scene Preview -->
+            <div class="card">
+                <div class="card-header blue">Scene Preview</div>
+                <div class="card-body">
+                    <img class="scene-preview-img" id="scenePreviewImg" style="display:none">
+                    <div style="font-size:12px;color:var(--text2);margin-bottom:6px" id="scenePreviewPlaceholder">Click refresh to capture the current OBS scene.</div>
+                    <div class="btn-group">
+                        <button class="bb btn-sm" onclick="refreshScenePreview()">📷 Refresh</button>
+                        <label style="margin:0;font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                            <input type="checkbox" id="autoScenePreview" style="width:auto;margin:0"> Auto-refresh (5s)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header teal">Audio Source</div>
+                <div class="card-body">
+                    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Select which racer's audio to broadcast:</div>
+                    <div class="btn-group" id="audioBtns"></div>
+                    <div class="log" id="aLog"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header purple">Sync Nudger</div>
+                <div class="card-body">
+                    <div class="btn-group" style="margin-bottom:8px" id="syncBtns"></div>
+                    <div style="font-size:13px;margin-bottom:4px">Target: <b id="sTarget">Racer1_Feed</b> — Delay: <b id="sDelay">0 ms</b></div>
+                    <div class="nudge-grid" style="grid-template-columns:repeat(4,1fr)">
+                        <button class="br btn-sm" onclick="nudge(-5000)">−5s</button>
+                        <button class="br btn-sm" onclick="nudge(-1000)">−1s</button>
+                        <button class="br btn-sm" onclick="nudge(-500)">−500ms</button>
+                        <button class="br btn-sm" onclick="nudge(-100)">−100ms</button>
+                        <button class="bg btn-sm" onclick="nudge(100)">+100ms</button>
+                        <button class="bg btn-sm" onclick="nudge(500)">+500ms</button>
+                        <button class="bg btn-sm" onclick="nudge(1000)">+1s</button>
+                        <button class="bg btn-sm" onclick="nudge(5000)">+5s</button>
+                    </div>
+                    <div class="row" style="margin-top:8px;align-items:center">
+                        <div style="flex:0 0 auto"><label style="margin:0">Custom (ms):</label></div>
+                        <div><input class="inline-input" type="number" id="nudgeCustom" value="1000" step="100"></div>
+                        <div style="flex:0"><button class="br btn-sm" onclick="nudge(-parseInt($('#nudgeCustom').value)||0)">−</button></div>
+                        <div style="flex:0"><button class="bg btn-sm" onclick="nudge(parseInt($('#nudgeCustom').value)||0)">+</button></div>
+                        <div style="flex:0"><button class="bb btn-sm" onclick="resetSync()">Reset</button></div>
+                    </div>
+                    <div class="log" id="sLog"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CROP TOOL (full width) -->
+    <div class="bottom-section">
+        <div class="card">
+            <div class="card-header blue">
+                Crop Tool
+                <span style="font-size:11px;color:var(--text2);margin-left:auto" id="dSlotLabel">Racer 1</span>
+            </div>
+            <div class="card-body">
+                <div class="btn-group" style="margin-bottom:8px">
+                    <span id="cropSlotBtns" style="display:contents"></span>
+                    <span style="width:1px;background:var(--border);margin:0 4px"></span>
+                    <button class="bg btn-sm btn-active" id="cropModeGame" onclick="setCropMode('game')">🎮 Game</button>
+                    <button class="bp btn-sm" id="cropModeTracker" onclick="setCropMode('tracker')">📊 Tracker</button>
+                    <button class="by btn-sm" id="cropModeTimer" onclick="setCropMode('timer')">⏱ Timer</button>
+                    <span style="width:1px;background:var(--border);margin:0 4px"></span>
+                    <button class="bb btn-sm" onclick="refreshCropPreview()">📷 Refresh</button>
+                    <button class="bg btn-sm" onclick="autoCrop()">🔍 Auto-Detect</button>
+                    <button class="bp btn-sm" onclick="applyAllCrops()">✓ Apply to OBS</button>
+                    <button class="br btn-sm" onclick="clearCropRegion()">✕ Clear Region</button>
+                </div>
+
+                <div style="display:flex;gap:12px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
+                    <span style="font-size:12px;color:var(--text2)">Mode: <b id="cropModeLabel" style="color:var(--green)">Game</b></span>
+                    <span id="dStat" style="font-size:11px;color:var(--text2)"></span>
+                    <label style="margin:0;font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;margin-left:auto">
+                        <input type="checkbox" id="magToggle" checked style="width:auto;margin:0"> Magnifier
+                    </label>
+                </div>
+
+                <!-- Crop coordinate inputs -->
+                <div class="crop-inputs" id="cropInputs">
+                    <div><label>X</label><input type="number" id="cropInX" min="0" value="0" onchange="applyCropInputs()"></div>
+                    <div><label>Y</label><input type="number" id="cropInY" min="0" value="0" onchange="applyCropInputs()"></div>
+                    <div><label>Width</label><input type="number" id="cropInW" min="1" value="0" onchange="applyCropInputs()"></div>
+                    <div><label>Height</label><input type="number" id="cropInH" min="1" value="0" onchange="applyCropInputs()"></div>
+                </div>
+
+                <div class="crop-container" id="cropContainer">
+                    <div class="loading-overlay" id="loadCrop"><div class="spinner"></div> Capturing…</div>
+                    <div class="crop-placeholder" id="cropPlaceholder">
+                        Start a feed and click 📷 Refresh to load a preview frame.<br>
+                        Drag a rectangle on the image, or use the coordinate inputs above.
+                    </div>
+                    <canvas id="cropCanvas" style="display:none;cursor:crosshair"></canvas>
+                    <div class="magnifier" id="magnifier"><div class="magnifier-xhair"></div></div>
+                </div>
+
+                <div class="crop-legend">
+                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(0,255,0,0.5)"></div> Game</div>
+                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(180,0,255,0.5)"></div> Tracker</div>
+                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(255,200,0,0.5)"></div> Timer</div>
+                </div>
+                <div class="coords-bar" id="coordsBar">
+                    <span id="coordsCursor">Cursor: —</span>
+                    <span id="coordsGame">Game: —</span>
+                    <span id="coordsTracker">Tracker: —</span>
+                    <span id="coordsTimer">Timer: —</span>
+                </div>
+                <div class="log" id="cLog"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRESETS (full width) -->
+    <div class="bottom-section" style="padding-top:0">
+        <div class="card">
+            <div class="card-header yellow">Crop Presets</div>
+            <div class="card-body">
+                <div class="row" style="margin-bottom:8px">
+                    <div><label>Channel</label><input id="presetChannel" placeholder="racer_name"></div>
+                    <div><label>Preset Name</label><input id="presetName" placeholder="Default Layout"></div>
+                    <div style="flex:0;padding-top:16px"><button class="by btn-sm" onclick="savePreset()">💾 Save</button></div>
+                </div>
+                <div class="row" style="margin-bottom:8px">
+                    <div><label>Filter by Channel</label><input id="presetFilter" placeholder="Leave empty for all" oninput="loadPresets()"></div>
+                    <div style="flex:0;padding-top:16px"><button class="bb btn-sm" onclick="loadPresets()">↻ Refresh</button></div>
+                </div>
+                <div class="preset-list" id="presetList">
+                    <div style="padding:12px;color:var(--text2);font-size:12px;text-align:center">No presets saved yet.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TEMPLATE EDITOR (full width) -->
+    <div class="bottom-section" style="padding-top:0">
+        <div class="card">
+            <div class="card-header purple">Template Editor</div>
+            <div class="card-body">
+                <div class="row" style="margin-bottom:8px">
+                    <div><label>Template Name</label><input id="tplName" placeholder="My Layout Template"></div>
+                    <div><label>Upload Image</label><input type="file" id="tplFile" accept=".jpg,.jpeg,.png,.webp" style="padding:4px"></div>
+                    <div style="flex:0;padding-top:16px"><button class="bp btn-sm" onclick="uploadTemplate()">📤 Upload</button></div>
+                </div>
+                <div class="row" style="margin-bottom:8px">
+                    <div>
+                        <label>Saved Templates</label>
+                        <select id="tplSelect" onchange="loadTemplate()"><option value="">— Select —</option></select>
+                    </div>
+                    <div style="flex:0;padding-top:16px"><button class="bb btn-sm" onclick="refreshTemplates()">↻</button></div>
+                    <div style="flex:0;padding-top:16px"><button class="br btn-sm" onclick="deleteTemplate()">🗑</button></div>
+                </div>
+                <div style="font-size:12px;color:var(--text2);margin-bottom:6px">
+                    Draw placement regions for each player slot. Drag existing regions to move them, drag corners to resize.
+                </div>
+                <!-- Player slot selector -->
+                <div class="btn-group" style="margin-bottom:8px">
+                    <span style="font-size:12px;color:var(--text2);margin-right:4px;display:flex;align-items:center">Slot:</span>
+                    <div id="tplSlotBtns"></div>
+                    <button class="bg btn-sm" onclick="addTplSlot()" title="Add player slot">+ Add Slot</button>
+                    <button class="br btn-sm" onclick="removeTplSlot()" title="Remove last slot">− Remove</button>
+                </div>
+                <div class="btn-group" style="margin-bottom:8px">
+                    <button class="bg btn-sm btn-active" id="tplModeGame" onclick="setTplMode('game')">🎮 Game</button>
+                    <button class="bp btn-sm" id="tplModeTracker" onclick="setTplMode('tracker')">📊 Tracker</button>
+                    <button class="by btn-sm" id="tplModeTimer" onclick="setTplMode('timer')">⏱ Timer</button>
+                    <button class="bt btn-sm" id="tplModeText" onclick="setTplMode('text')">📝 Text</button>
+                    <span style="width:1px;background:var(--border);margin:0 4px"></span>
+                    <button class="bp btn-sm" onclick="applyTemplateToOBS()">✓ Apply to OBS</button>
+                    <button class="br btn-sm" onclick="clearTplRegion()">✕ Clear Region</button>
+                </div>
+                <!-- Text element editor (visible when text mode active) -->
+                <div id="tplTextEditor" style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;padding:8px;background:var(--bg3)">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                        <span style="font-size:12px;font-weight:600;color:var(--teal)">Text Elements</span>
+                        <button class="bt btn-sm" onclick="addTplText()">+ Add Text</button>
+                    </div>
+                    <div id="tplTextList"></div>
+                    <div style="font-size:11px;color:var(--text2);margin-top:4px">Drag to move elements. Drag corners to resize.</div>
+                </div>
+                <div class="crop-container" id="tplContainer" style="min-height:100px">
+                    <div class="crop-placeholder" id="tplPlaceholder">Upload or select a template to start drawing regions.</div>
+                    <canvas id="tplCanvas" style="display:none;cursor:crosshair"></canvas>
+                </div>
+                <div class="crop-legend" style="margin-top:6px">
+                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(0,255,0,0.5)"></div> Game</div>
+                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(180,0,255,0.5)"></div> Tracker</div>
+                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(255,200,0,0.5)"></div> Timer</div>
+                </div>
+                <div class="coords-bar" id="tplCoordsBar" style="margin-top:4px">
+                    <span id="tplSlotInfo">Slot 0 (Racer 1)</span>
+                </div>
+                <div class="log" id="tLog"></div>
+            </div>
+        </div>
+    </div>
+
+<script>
+/* ================================================================
+   HELPERS
+   ================================================================ */
+const API = location.origin;
+const $ = s => document.querySelector(s);
+const logMsg = (el, m) => {
+    if (!el) return;
+    const t = new Date().toLocaleTimeString();
+    el.textContent += `[${t}] ${m}\n`;
+    el.scrollTop = el.scrollHeight;
+};
+async function apiPost(p, b={}) {
+    const r = await fetch(API+p, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+    if (!r.ok) throw new Error(`${p}: ${r.status}`);
+    return r.json();
+}
+async function apiGet(p) {
+    const r = await fetch(API+p);
+    if (!r.ok) throw new Error(`${p}: ${r.status}`);
+    return r.json();
+}
+async function apiDelete(p) {
+    const r = await fetch(API+p, {method:'DELETE'});
+    if (!r.ok) throw new Error(`${p}: ${r.status}`);
+    return r.json();
+}
+async function apiPut(p, b={}) {
+    const r = await fetch(API+p, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+    if (!r.ok) throw new Error(`${p}: ${r.status}`);
+    return r.json();
+}
+function showLoading(id, msg) {
+    const el = document.getElementById(id); if (!el) return;
+    el.innerHTML = `<div class="spinner"></div> ${msg}`;
+    el.style.display = 'flex';
+}
+function hideLoading(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+
+/* ================================================================
+   GLOBAL SLOT COUNT — driven by active template
+   ================================================================ */
+let numSlots = 2;
+let cropRegions = {};
+
+function ensureCropSlot(s) {
+    if (!cropRegions[s]) cropRegions[s] = { game: null, tracker: null, timer: null };
+}
+
+function setNumSlots(n) {
+    numSlots = Math.max(1, n);
+    for (let i = 0; i < numSlots; i++) ensureCropSlot(i);
+    renderIngestTabs();
+    renderCropSlotBtns();
+    renderAudioBtns();
+    renderSyncBtns();
+    document.getElementById('ingestSlotCount').textContent = `${numSlots} Slots`;
+}
+
+/* ================================================================
+   DYNAMIC RENDERERS
+   ================================================================ */
+let ingestTab = 0;
+
+function renderIngestTabs() {
+    const tabs = document.getElementById('ingestTabs');
+    const container = document.getElementById('ingestSlots');
+    if (!tabs || !container) return;
+    tabs.innerHTML = '';
+    container.innerHTML = '';
+    for (let i = 0; i < numSlots; i++) {
+        const btn = document.createElement('button');
+        btn.className = `bg btn-sm${i === ingestTab ? ' btn-active' : ''}`;
+        btn.textContent = `Racer ${i + 1}`;
+        btn.id = `ingestTab${i}`;
+        btn.onclick = () => switchIngestTab(i);
+        tabs.appendChild(btn);
+
+        const box = document.createElement('div');
+        box.className = 'slot-box';
+        box.id = `slotBox${i}`;
+        box.style.display = i === ingestTab ? 'block' : 'none';
+        box.innerHTML = `
+            <div class="loading-overlay" id="load${i}"><div class="spinner"></div> Starting\u2026</div>
+            <h4><span class="dot off" id="d${i}"></span> Racer ${i + 1}</h4>
+            <label>URL</label>
+            <input id="u${i}" placeholder="twitch.tv/racer${i+1} or twitch.tv/videos/123?t=1h0m28s">
+            <div class="row">
+                <div><label>VOD Start Time</label><input id="t${i}" placeholder="e.g. 1h5m30s or 00:05:30 or 330"></div>
+            </div>
+            <div class="btn-group">
+                <button class="bg btn-sm" onclick="startF(${i})">\u25b6 Start</button>
+                <button class="br btn-sm" onclick="stopF(${i})">\u25a0 Stop</button>
+                <button class="bb btn-sm" onclick="refreshPreview(${i})">\ud83d\udcf7 Preview</button>
+            </div>
+            <img class="preview-img" id="prev${i}">
+            <div class="preview-label" id="prevInfo${i}"></div>
+        `;
+        container.appendChild(box);
+    }
+}
+
+function switchIngestTab(tab) {
+    ingestTab = tab;
+    for (let i = 0; i < numSlots; i++) {
+        const box = document.getElementById(`slotBox${i}`);
+        const btn = document.getElementById(`ingestTab${i}`);
+        if (box) box.style.display = i === tab ? 'block' : 'none';
+        if (btn) btn.classList.toggle('btn-active', i === tab);
+    }
+}
+
+function renderCropSlotBtns() {
+    const container = document.getElementById('cropSlotBtns');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let i = 0; i < numSlots; i++) {
+        const btn = document.createElement('button');
+        btn.className = `bb btn-sm${i === cropSlot ? ' btn-active' : ''}`;
+        btn.textContent = `Racer ${i + 1}`;
+        btn.id = `cropSlotBtn${i}`;
+        btn.onclick = () => selSlot(i);
+        container.appendChild(btn);
+    }
+}
+
+function renderAudioBtns() {
+    const container = document.getElementById('audioBtns');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let i = 0; i < numSlots; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'bt audio-btn btn-sm';
+        btn.id = `audioBtn${i}`;
+        btn.textContent = `\ud83d\udd0a Racer ${i + 1}`;
+        btn.onclick = () => switchAudio(i);
+        container.appendChild(btn);
+    }
+    const mute = document.createElement('button');
+    mute.className = 'br audio-btn btn-sm';
+    mute.textContent = '\ud83d\udd07 Mute All';
+    mute.onclick = muteAll;
+    container.appendChild(mute);
+}
+
+function renderSyncBtns() {
+    const container = document.getElementById('syncBtns');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let i = 0; i < numSlots; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'bb btn-sm';
+        btn.textContent = `Racer ${i + 1}`;
+        btn.onclick = () => selSync(i);
+        container.appendChild(btn);
+    }
+}
+
+/* ================================================================
+   WEBSOCKET
+   ================================================================ */
+let ws;
+function wsConnect() {
+    ws = new WebSocket(API.replace(/^http/,'ws')+'/ws');
+    ws.onopen = () => { $('#wsDot').className='dot on'; $('#wsText').textContent='WS Connected'; };
+    ws.onclose = () => { $('#wsDot').className='dot off'; $('#wsText').textContent='WS Disconnected'; setTimeout(wsConnect,3000); };
+    ws.onmessage = e => { try { const m=JSON.parse(e.data); handleEvent(m.event,m.data); } catch{} };
+}
+wsConnect();
+function handleEvent(ev, d) {
+    if (ev==='ingest:started') setDot(d.slot, true);
+    if (ev==='ingest:stopped') setDot(d.slot, false);
+    if (ev==='obs:connected')  { $('#obsDot').className='dot on'; loadSc(); }
+    if (ev==='obs:disconnected') $('#obsDot').className='dot off';
+    if (ev==='audio:switched') updateAudioUI(d.active_slot);
+    if (ev==='obs:source_created') logMsg($('#oLog'), `Auto-created source: ${d.source}`);
+    if (ev==='template:applied') {
+        logMsg($('#tLog'), `Template "${d.template_name}" applied: ${(d.applied||[]).join(', ')}`);
+        if (d.num_slots) setNumSlots(d.num_slots);
+    }
+}
+
+/* ================================================================
+   INGEST
+   ================================================================ */
+function setDot(s, on) { const e = document.getElementById(`d${s}`); if (e) e.className = `dot ${on?'on':'off'}`; }
+
+async function startF(s) {
+    const u = document.getElementById(`u${s}`).value.trim();
+    if (!u) { logMsg($('#iLog'),`Slot ${s}: no URL`); return; }
+    const startOffset = document.getElementById(`t${s}`).value.trim();
+    showLoading(`load${s}`, 'Starting feed…');
+    try {
+        const r = await apiPost('/api/ingest/start',{slot:s, url:u, quality:'best', start_offset: startOffset});
+        logMsg($('#iLog'),`Slot ${s}: ${r.local_url}`);
+        setDot(s, true);
+        showLoading(`load${s}`, 'Waiting for first frame…');
+        let tries = 0;
+        const poll = setInterval(async () => {
+            tries++;
+            try {
+                const pr = await apiGet(`/api/ingest/preview/${s}`);
+                if (pr.success) {
+                    clearInterval(poll);
+                    const src = 'data:image/jpeg;base64,' + pr.image_b64;
+                    const el = document.getElementById(`prev${s}`);
+                    if (el) { el.src = src; el.style.display = 'block'; }
+                    document.getElementById(`prevInfo${s}`).textContent = `${pr.width}×${pr.height}`;
+                    if (s === cropSlot) loadCropImage(src, pr.width, pr.height);
+                    logMsg($('#iLog'), `Slot ${s}: preview captured (${pr.width}×${pr.height})`);
+                    hideLoading(`load${s}`);
+                }
+            } catch(e) {}
+            if (tries >= 30) { clearInterval(poll); logMsg($('#iLog'), `Slot ${s}: preview timed out`); hideLoading(`load${s}`); }
+        }, 1000);
+    } catch(e) { logMsg($('#iLog'),`Error: ${e.message}`); hideLoading(`load${s}`); }
+}
+
+async function stopF(s) {
+    try {
+        await apiPost('/api/ingest/stop',{slot:s});
+        logMsg($('#iLog'),`Slot ${s}: stopped`); setDot(s, false);
+        const el = document.getElementById(`prev${s}`); if (el) el.style.display = 'none';
+        document.getElementById(`prevInfo${s}`).textContent = '';
+    } catch(e) { logMsg($('#iLog'),`Error: ${e.message}`); }
+}
+
+async function refreshPreview(slot) {
+    showLoading(`load${slot}`, 'Capturing frame…');
+    try {
+        const r = await apiGet(`/api/ingest/preview/${slot}`);
+        if (r.success) {
+            const src = 'data:image/jpeg;base64,' + r.image_b64;
+            const el = document.getElementById(`prev${slot}`);
+            if (el) { el.src = src; el.style.display = 'block'; }
+            document.getElementById(`prevInfo${slot}`).textContent = `${r.width}×${r.height}`;
+            if (slot === cropSlot) loadCropImage(src, r.width, r.height);
+            logMsg($('#iLog'), `Slot ${slot}: preview captured (${r.width}×${r.height})`);
+        } else { logMsg($('#iLog'), `Slot ${slot}: ${r.error}`); }
+    } catch(e) { logMsg($('#iLog'), `Preview error: ${e.message}`); }
+    finally { hideLoading(`load${slot}`); }
+}
+
+/* ================================================================
+   CROP TOOL — drag-to-select + corner resize + input fields
+   ================================================================ */
+let cropSlot = 0, cropMode = 'game';
+let cropImg = null, cropImgW = 0, cropImgH = 0;
+let dragging = false, dragStart = null, dragCurrent = null;
+let resizing = false, resizeCorner = null, resizeOrigRect = null;
+
+const COLORS = {
+    game:    { fill: 'rgba(0,255,0,0.15)',   stroke: '#00ff00' },
+    tracker: { fill: 'rgba(180,0,255,0.15)', stroke: '#b400ff' },
+    timer:   { fill: 'rgba(255,200,0,0.15)', stroke: '#ffc800' },
+};
+const MODE_LABEL = { game: 'Game', tracker: 'Tracker', timer: 'Timer' };
+const MODE_CSS   = { game: 'var(--green)', tracker: 'var(--purple)', timer: 'var(--yellow)' };
+
+function selSlot(s) {
+    cropSlot = s; dragging = false; resizing = false;
+    ensureCropSlot(s);
+    $('#dSlotLabel').textContent = `Racer ${s+1}`;
+    for (let i = 0; i < numSlots; i++) {
+        const btn = document.getElementById(`cropSlotBtn${i}`);
+        if (btn) btn.classList.toggle('btn-active', i === s);
+    }
+    const el = document.getElementById(`prev${s}`);
+    if (el && el.src && el.style.display !== 'none') {
+        const info = document.getElementById(`prevInfo${s}`).textContent;
+        const m = info.match(/(\d+)×(\d+)/);
+        if (m) loadCropImage(el.src, +m[1], +m[2]);
+        else refreshCropPreview();
+    } else refreshCropPreview();
+    syncInputsFromRegion();
+}
+
+function setCropMode(mode) {
+    cropMode = mode; dragging = false; resizing = false;
+    $('#cropModeLabel').textContent = MODE_LABEL[mode];
+    $('#cropModeLabel').style.color = MODE_CSS[mode];
+    for (const m of ['game','tracker','timer']) {
+        const id = `#cropMode${m[0].toUpperCase()+m.slice(1)}`;
+        document.querySelector(id).classList.toggle('btn-active', m === mode);
+    }
+    syncInputsFromRegion();
+    drawCropCanvas();
+}
+
+function clearCropRegion() {
+    cropRegions[cropSlot][cropMode] = null;
+    dragging = false; resizing = false;
+    syncInputsFromRegion();
+    drawCropCanvas(); updateCoordsBar();
+    logMsg($('#cLog'), `Cleared ${cropMode} region for Racer ${cropSlot+1}`);
+}
+
+function syncInputsFromRegion() {
+    const r = cropRegions[cropSlot][cropMode];
+    if (r) {
+        $('#cropInX').value = r.x1; $('#cropInY').value = r.y1;
+        $('#cropInW').value = r.x2 - r.x1; $('#cropInH').value = r.y2 - r.y1;
+    } else {
+        $('#cropInX').value = 0; $('#cropInY').value = 0;
+        $('#cropInW').value = 0; $('#cropInH').value = 0;
+    }
+}
+
+function applyCropInputs() {
+    const x = parseInt($('#cropInX').value)||0, y = parseInt($('#cropInY').value)||0;
+    const w = parseInt($('#cropInW').value)||0, h = parseInt($('#cropInH').value)||0;
+    if (w < 4 || h < 4) return;
+    cropRegions[cropSlot][cropMode] = { x1: x, y1: y, x2: x+w, y2: y+h };
+    drawCropCanvas(); updateCoordsBar();
+    logMsg($('#cLog'), `${MODE_LABEL[cropMode]}: set to (${x},${y}) ${w}×${h}`);
+}
+
+async function refreshCropPreview() {
+    showLoading('loadCrop', 'Capturing frame…');
+    try {
+        const r = await apiGet(`/api/ingest/preview/${cropSlot}`);
+        if (r.success) {
+            const src = 'data:image/jpeg;base64,' + r.image_b64;
+            loadCropImage(src, r.width, r.height);
+            const el = document.getElementById(`prev${cropSlot}`);
+            if (el) { el.src = src; el.style.display = 'block'; }
+            document.getElementById(`prevInfo${cropSlot}`).textContent = `${r.width}×${r.height}`;
+        } else logMsg($('#cLog'), `Preview failed: ${r.error}`);
+    } catch(e) { logMsg($('#cLog'), `Error: ${e.message}`); }
+    finally { hideLoading('loadCrop'); }
+}
+
+function loadCropImage(src, w, h) {
+    cropImgW = w; cropImgH = h;
+    const img = new Image();
+    img.onload = () => {
+        cropImg = img;
+        const canvas = $('#cropCanvas');
+        const containerW = $('#cropContainer').clientWidth - 2;
+        const scale = Math.min(1, containerW / w);
+        canvas.width = Math.floor(w * scale);
+        canvas.height = Math.floor(h * scale);
+        canvas.style.display = 'block';
+        $('#cropPlaceholder').style.display = 'none';
+        drawCropCanvas();
+    };
+    img.src = src;
+}
+
+function drawCropCanvas() {
+    const canvas = $('#cropCanvas');
+    if (!canvas || !cropImg) return;
+    const ctx = canvas.getContext('2d');
+    const cw = canvas.width, ch = canvas.height;
+    const sx = cw / cropImgW, sy = ch / cropImgH;
+    ctx.drawImage(cropImg, 0, 0, cw, ch);
+
+    const regions = cropRegions[cropSlot] || {};
+    for (const [mode, rect] of Object.entries(regions)) {
+        if (!rect) continue;
+        const col = COLORS[mode];
+        const rx = rect.x1 * sx, ry = rect.y1 * sy;
+        const rw = (rect.x2 - rect.x1) * sx, rh = (rect.y2 - rect.y1) * sy;
+        ctx.fillStyle = col.fill; ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeStyle = col.stroke; ctx.lineWidth = 2;
+        ctx.setLineDash(mode === cropMode ? [] : [4, 4]);
+        ctx.strokeRect(rx, ry, rw, rh); ctx.setLineDash([]);
+        ctx.fillStyle = col.stroke; ctx.font = 'bold 12px system-ui';
+        ctx.fillText(MODE_LABEL[mode], rx + 4, ry + 14);
+
+        // Corner handles for active mode
+        if (mode === cropMode) {
+            const corners = [[rx, ry], [rx+rw, ry], [rx, ry+rh], [rx+rw, ry+rh]];
+            ctx.fillStyle = '#fff'; ctx.strokeStyle = col.stroke; ctx.lineWidth = 2;
+            for (const [cx, cy] of corners) {
+                ctx.fillRect(cx-5, cy-5, 10, 10);
+                ctx.strokeRect(cx-5, cy-5, 10, 10);
+            }
+        }
+    }
+
+    // In-progress drag rectangle
+    if (dragging && dragStart && dragCurrent) {
+        const col = COLORS[cropMode];
+        const rx = Math.min(dragStart.cx, dragCurrent.cx);
+        const ry = Math.min(dragStart.cy, dragCurrent.cy);
+        const rw = Math.abs(dragCurrent.cx - dragStart.cx);
+        const rh = Math.abs(dragCurrent.cy - dragStart.cy);
+        ctx.fillStyle = col.fill; ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeStyle = col.stroke; ctx.lineWidth = 2;
+        ctx.strokeRect(rx, ry, rw, rh);
+    }
+
+    updateCoordsBar();
+}
+
+function canvasToImage(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    const ix = Math.round(cx / canvas.width * cropImgW);
+    const iy = Math.round(cy / canvas.height * cropImgH);
+    return { cx, cy, ix: Math.max(0, Math.min(cropImgW-1, ix)), iy: Math.max(0, Math.min(cropImgH-1, iy)) };
+}
+
+function hitCorner(canvas, e) {
+    const r = cropRegions[cropSlot][cropMode];
+    if (!r) return null;
+    const sx = canvas.width / cropImgW, sy = canvas.height / cropImgH;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const corners = [
+        { name: 'tl', x: r.x1 * sx, y: r.y1 * sy },
+        { name: 'tr', x: r.x2 * sx, y: r.y1 * sy },
+        { name: 'bl', x: r.x1 * sx, y: r.y2 * sy },
+        { name: 'br', x: r.x2 * sx, y: r.y2 * sy },
+    ];
+    for (const c of corners) {
+        if (Math.abs(mx - c.x) < 10 && Math.abs(my - c.y) < 10) return c.name;
+    }
+    return null;
+}
+
+function onCropMouseDown(e) {
+    const canvas = $('#cropCanvas');
+    if (!cropImg) return;
+    e.preventDefault();
+
+    const corner = hitCorner(canvas, e);
+    if (corner) {
+        resizing = true; resizeCorner = corner;
+        resizeOrigRect = { ...cropRegions[cropSlot][cropMode] };
+        return;
+    }
+
+    const { cx, cy, ix, iy } = canvasToImage(canvas, e);
+    dragging = true;
+    dragStart = { cx, cy, ix, iy };
+    dragCurrent = { cx, cy, ix, iy };
+}
+
+function onCropMouseMove(e) {
+    const canvas = $('#cropCanvas');
+    if (!cropImg) return;
+
+    const corner = hitCorner(canvas, e);
+    canvas.style.cursor = corner ? 'nwse-resize' : 'crosshair';
+
+    const { cx, cy, ix, iy } = canvasToImage(canvas, e);
+
+    if (resizing && resizeOrigRect) {
+        const r = { ...resizeOrigRect };
+        if (resizeCorner === 'tl') { r.x1 = ix; r.y1 = iy; }
+        else if (resizeCorner === 'tr') { r.x2 = ix; r.y1 = iy; }
+        else if (resizeCorner === 'bl') { r.x1 = ix; r.y2 = iy; }
+        else if (resizeCorner === 'br') { r.x2 = ix; r.y2 = iy; }
+        cropRegions[cropSlot][cropMode] = {
+            x1: Math.min(r.x1, r.x2), y1: Math.min(r.y1, r.y2),
+            x2: Math.max(r.x1, r.x2), y2: Math.max(r.y1, r.y2),
+        };
+        syncInputsFromRegion();
+        drawCropCanvas();
+        return;
+    }
+
+    if (dragging) {
+        dragCurrent = { cx, cy, ix, iy };
+        drawCropCanvas();
+    }
+
+    // Magnifier
+    const mag = $('#magnifier');
+    if (!$('#magToggle').checked) { mag.style.display = 'none'; return; }
+    const container = $('#cropContainer').getBoundingClientRect();
+    let mx = e.clientX - container.left + 20;
+    let my = e.clientY - container.top - 80;
+    if (mx + 170 > container.width) mx = e.clientX - container.left - 180;
+    if (my < 0) my = e.clientY - container.top + 20;
+    mag.style.left = mx + 'px'; mag.style.top = my + 'px'; mag.style.display = 'block';
+    const zoomW = cropImgW * 4, zoomH = cropImgH * 4;
+    const scaleX = cropImgW / canvas.width, scaleY = cropImgH / canvas.height;
+    const bgX = -(cx * scaleX * 4) + 80, bgY = -(cy * scaleY * 4) + 80;
+    mag.style.backgroundImage = `url(${cropImg.src})`;
+    mag.style.backgroundSize = `${zoomW}px ${zoomH}px`;
+    mag.style.backgroundPosition = `${bgX}px ${bgY}px`;
+    $('#coordsCursor').textContent = `Cursor: ${ix}, ${iy}`;
+}
+
+function onCropMouseUp(e) {
+    if (resizing) {
+        resizing = false; resizeCorner = null; resizeOrigRect = null;
+        updateCoordsBar();
+        const r = cropRegions[cropSlot][cropMode];
+        if (r) logMsg($('#cLog'), `${MODE_LABEL[cropMode]}: resized to (${r.x1},${r.y1})→(${r.x2},${r.y2}) [${r.x2-r.x1}×${r.y2-r.y1}]`);
+        return;
+    }
+    if (!dragging) return;
+    dragging = false;
+    const canvas = $('#cropCanvas');
+    const { ix, iy } = canvasToImage(canvas, e);
+    const x1 = Math.min(dragStart.ix, ix), y1 = Math.min(dragStart.iy, iy);
+    const x2 = Math.max(dragStart.ix, ix), y2 = Math.max(dragStart.iy, iy);
+    if (x2 - x1 < 4 || y2 - y1 < 4) { drawCropCanvas(); return; }
+    cropRegions[cropSlot][cropMode] = { x1, y1, x2, y2 };
+    syncInputsFromRegion();
+    drawCropCanvas(); updateCoordsBar();
+    logMsg($('#cLog'), `${MODE_LABEL[cropMode]}: (${x1},${y1})→(${x2},${y2}) [${x2-x1}×${y2-y1}]`);
+}
+
+function onCropLeave() { $('#magnifier').style.display = 'none'; }
+
+function updateCoordsBar() {
+    const r = cropRegions[cropSlot];
+    for (const mode of ['game','tracker','timer']) {
+        const key = mode[0].toUpperCase() + mode.slice(1);
+        const el = $(`#coords${key}`);
+        if (r[mode]) {
+            const c = r[mode];
+            el.textContent = `${MODE_LABEL[mode]}: (${c.x1},${c.y1})→(${c.x2},${c.y2}) [${c.x2-c.x1}×${c.y2-c.y1}]`;
+        } else el.textContent = `${MODE_LABEL[mode]}: —`;
+    }
+}
+
+async function applyAllCrops() {
+    const regions = cropRegions[cropSlot];
+    let applied = 0;
+    for (const [mode, rect] of Object.entries(regions)) {
+        if (!rect) continue;
+        const sourceName = `Racer${cropSlot+1}_${mode[0].toUpperCase()+mode.slice(1)}`;
+        try {
+            await apiPost('/api/detect/manual', {
+                source_name: sourceName,
+                x: rect.x1, y: rect.y1,
+                width: rect.x2 - rect.x1, height: rect.y2 - rect.y1,
+                source_width: cropImgW, source_height: cropImgH,
+            });
+            applied++;
+            logMsg($('#cLog'), `Applied ${mode} crop → ${sourceName}`);
+        } catch(e) { logMsg($('#cLog'), `Error applying ${mode}: ${e.message}`); }
+    }
+    if (applied === 0) logMsg($('#cLog'), 'No crop regions defined to apply.');
+}
+
+async function autoCrop() {
+    $('#dStat').textContent = 'Detecting…';
+    showLoading('loadCrop', 'Running auto-detect…');
+    try {
+        const r = await apiPost(`/api/detect/${cropSlot}`);
+        if (r.success) {
+            $('#dStat').textContent = `✓ ${(r.confidence*100).toFixed(1)}%`;
+            if (r.game_crop) {
+                cropRegions[cropSlot].game = {
+                    x1: r.game_crop.x, y1: r.game_crop.y,
+                    x2: r.game_crop.x + r.game_crop.width, y2: r.game_crop.y + r.game_crop.height,
+                };
+            }
+            if (r.tracker_crop) {
+                cropRegions[cropSlot].tracker = {
+                    x1: r.tracker_crop.x, y1: r.tracker_crop.y,
+                    x2: r.tracker_crop.x + r.tracker_crop.width, y2: r.tracker_crop.y + r.tracker_crop.height,
+                };
+            }
+            syncInputsFromRegion();
+            drawCropCanvas();
+            logMsg($('#cLog'), `Slot ${cropSlot}: auto-crop detected regions`);
+        } else {
+            $('#dStat').textContent = `✗ ${(r.confidence*100).toFixed(1)}%`;
+            logMsg($('#cLog'), 'Auto-detect failed – use manual crop');
+        }
+    } catch(e) { $('#dStat').textContent = 'Error'; logMsg($('#cLog'), e.message); }
+    finally { hideLoading('loadCrop'); }
+}
+
+// Wire canvas events
+document.addEventListener('DOMContentLoaded', () => {
+    const c = $('#cropCanvas');
+    c.addEventListener('mousedown', onCropMouseDown);
+    c.addEventListener('mousemove', onCropMouseMove);
+    c.addEventListener('mouseup', onCropMouseUp);
+    c.addEventListener('mouseleave', e => { onCropMouseUp(e); onCropLeave(); });
+});
+
+/* ================================================================
+   SCENE PREVIEW
+   ================================================================ */
+let scenePreviewInterval = null;
+async function refreshScenePreview() {
+    try {
+        const r = await apiGet('/api/obs/screenshot');
+        if (r.success) {
+            const img = $('#scenePreviewImg');
+            img.src = 'data:image/jpeg;base64,' + r.image_b64;
+            img.style.display = 'block';
+            $('#scenePreviewPlaceholder').style.display = 'none';
+        } else logMsg($('#oLog'), `Screenshot: ${r.error}`);
+    } catch(e) { logMsg($('#oLog'), `Screenshot error: ${e.message}`); }
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const cb = document.getElementById('autoScenePreview');
+    if (cb) cb.addEventListener('change', function() {
+        if (this.checked) {
+            refreshScenePreview();
+            scenePreviewInterval = setInterval(refreshScenePreview, 5000);
+        } else { clearInterval(scenePreviewInterval); scenePreviewInterval = null; }
+    });
+});
+
+/* ================================================================
+   AUDIO
+   ================================================================ */
+function updateAudioUI(slot) {
+    for (let i = 0; i < numSlots; i++) {
+        const btn = document.getElementById(`audioBtn${i}`);
+        if (btn) btn.classList.toggle('active', slot === i);
+    }
+}
+async function switchAudio(slot) {
+    try { await apiPost('/api/obs/audio', { active_slot: slot, num_slots: numSlots }); updateAudioUI(slot); logMsg($('#aLog'), `Audio → Racer ${slot+1}`); }
+    catch(e) { logMsg($('#aLog'), `Error: ${e.message}`); }
+}
+async function muteAll() {
+    try {
+        await apiPost('/api/obs/audio', { active_slot: -1, num_slots: numSlots });
+        for (let i = 0; i < numSlots; i++) {
+            const btn = document.getElementById(`audioBtn${i}`);
+            if (btn) btn.classList.remove('active');
+        }
+        logMsg($('#aLog'), 'All audio muted');
+    }
+    catch(e) { logMsg($('#aLog'), `Error: ${e.message}`); }
+}
+
+/* ================================================================
+   SYNC
+   ================================================================ */
+let syncSlot = 0;
+function selSync(s) {
+    syncSlot = s;
+    $('#sTarget').textContent = `Racer${s+1}_Feed`;
+    refreshSyncDelay();
+}
+async function refreshSyncDelay() {
+    try {
+        const r = await apiGet(`/api/obs/sync?num_slots=${numSlots}`);
+        const info = r[String(syncSlot)];
+        if (info) $('#sDelay').textContent = `${info.delay_ms} ms`;
+    } catch {}
+}
+async function nudge(d) {
+    d = parseInt(d) || 0;
+    const src = `Racer${syncSlot+1}_Feed`;
+    try {
+        const r = await apiPost('/api/obs/sync', { source_name: src, delta_ms: d });
+        const total = r.total_ms != null ? r.total_ms : '?';
+        $('#sDelay').textContent = `${total} ms`;
+        logMsg($('#sLog'), `${src}: ${d>0?'+':''}${d}ms → ${total}ms total`);
+    }
+    catch(e) { logMsg($('#sLog'), e.message); }
+}
+async function resetSync() {
+    const src = `Racer${syncSlot+1}_Feed`;
+    try {
+        const cur = await apiGet(`/api/obs/sync?num_slots=${numSlots}`);
+        const info = cur[String(syncSlot)];
+        const toRemove = info ? -info.delay_ms : 0;
+        if (toRemove === 0) { logMsg($('#sLog'), `${src}: already at 0 ms`); return; }
+        const r = await apiPost('/api/obs/sync', { source_name: src, delta_ms: toRemove });
+        $('#sDelay').textContent = '0 ms';
+        logMsg($('#sLog'), `${src}: reset to 0 ms`);
+    }
+    catch(e) { logMsg($('#sLog'), e.message); }
+}
+
+/* ================================================================
+   OBS
+   ================================================================ */
+async function obsConn() {
+    try { await apiPost('/api/obs/connect'); $('#obsDot').className = 'dot on'; logMsg($('#oLog'), 'Connected'); loadSc(); }
+    catch(e) { logMsg($('#oLog'), e.message); }
+}
+async function obsDisc() {
+    try { await apiPost('/api/obs/disconnect'); $('#obsDot').className = 'dot off'; logMsg($('#oLog'), 'Disconnected'); }
+    catch(e) { logMsg($('#oLog'), e.message); }
+}
+async function obsInit() {
+    try { await apiPost('/api/obs/init'); logMsg($('#oLog'), 'Re-provisioned OBS scene'); }
+    catch(e) { logMsg($('#oLog'), e.message); }
+}
+async function loadSc() {
+    try {
+        const r = await apiGet('/api/obs/scenes');
+        const s = $('#scSel'); s.innerHTML = '';
+        (r.scenes||[]).forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; s.appendChild(o); });
+    } catch {}
+}
+async function switchSc() {
+    const n = $('#scSel').value;
+    if (n) try { await apiPost('/api/obs/scene', { scene_name: n }); logMsg($('#oLog'), `Scene: ${n}`); } catch(e) { logMsg($('#oLog'), e.message); }
+}
+
+/* ================================================================
+   PRESETS
+   ================================================================ */
+async function savePreset() {
+    const channel = $('#presetChannel').value.trim();
+    const name = $('#presetName').value.trim();
+    if (!channel || !name) { logMsg($('#cLog'), 'Enter channel and preset name'); return; }
+    const r = cropRegions[cropSlot];
+    const toRect = (rect) => rect ? { x: rect.x1, y: rect.y1, width: rect.x2-rect.x1, height: rect.y2-rect.y1, source_width: cropImgW, source_height: cropImgH } : null;
+    try {
+        await apiPost('/api/presets', { channel, name, game_crop: toRect(r.game), tracker_crop: toRect(r.tracker), timer_crop: toRect(r.timer) });
+        logMsg($('#cLog'), `Preset saved: ${name} (${channel})`);
+        loadPresets();
+    } catch(e) { logMsg($('#cLog'), `Save error: ${e.message}`); }
+}
+
+async function loadPresets() {
+    const filter = $('#presetFilter').value.trim();
+    try {
+        const r = await apiGet(`/api/presets?channel=${encodeURIComponent(filter)}`);
+        const list = $('#presetList');
+        if (!r.presets || !r.presets.length) { list.innerHTML = '<div style="padding:12px;color:var(--text2);font-size:12px;text-align:center">No presets found.</div>'; return; }
+        list.innerHTML = r.presets.map(p => `
+            <div class="preset-row">
+                <span class="channel">${p.channel}</span>
+                <span class="name">${p.name}</span>
+                <span style="font-size:10px;color:var(--text2)">${(p.created_at||'').split('.')[0]}</span>
+                <button class="bg btn-sm" onclick="applyPreset(${p.id})">Apply</button>
+                <button class="br btn-sm" onclick="deletePreset(${p.id})">🗑</button>
+            </div>
+        `).join('');
+    } catch(e) { logMsg($('#cLog'), `Load error: ${e.message}`); }
+}
+
+async function applyPreset(id) {
+    try {
+        const r = await apiPost(`/api/presets/${id}/apply?slot=${cropSlot}`);
+        logMsg($('#cLog'), `Preset applied: ${(r.applied||[]).join(', ') || 'none'}`);
+        // Also load into local crop regions
+        const pr = await apiGet('/api/presets?channel=');
+        const p = (pr.presets||[]).find(x => x.id === id);
+        if (p) {
+            for (const mode of ['game','tracker','timer']) {
+                const key = mode + '_crop';
+                if (p[key]) {
+                    cropRegions[cropSlot][mode] = {
+                        x1: p[key].x, y1: p[key].y,
+                        x2: p[key].x + p[key].width, y2: p[key].y + p[key].height,
+                    };
+                }
+            }
+            syncInputsFromRegion();
+            drawCropCanvas();
+        }
+    } catch(e) { logMsg($('#cLog'), `Apply error: ${e.message}`); }
+}
+
+async function deletePreset(id) {
+    try { await apiDelete(`/api/presets/${id}`); loadPresets(); }
+    catch(e) { logMsg($('#cLog'), `Delete error: ${e.message}`); }
+}
+
+/* ================================================================
+   TEMPLATE EDITOR — per-slot regions with variable player count + text
+   ================================================================ */
+let tplMode = 'game', tplImg = null, tplImgW = 0, tplImgH = 0, tplId = null;
+let tplSlot = 0;  // currently selected slot
+let tplRegions = { slots: { "0": { game: null, tracker: null, timer: null }, "1": { game: null, tracker: null, timer: null } }, num_slots: 2, texts: [] };
+let tplAction = null; // { type: 'draw'|'move'|'resize', ... }
+
+function emptySlotRegions() { return { game: null, tracker: null, timer: null }; }
+
+function renderTplSlotBtns() {
+    const container = document.getElementById('tplSlotBtns');
+    if (!container) return;
+    container.innerHTML = '';
+    container.style.display = 'flex';
+    container.style.gap = '4px';
+    for (let i = 0; i < tplRegions.num_slots; i++) {
+        const btn = document.createElement('button');
+        btn.className = `bb btn-sm${i === tplSlot ? ' btn-active' : ''}`;
+        btn.textContent = `Racer ${i + 1}`;
+        btn.onclick = () => selectTplSlot(i);
+        container.appendChild(btn);
+    }
+    document.getElementById('tplSlotInfo').textContent = `Slot ${tplSlot} (Racer ${tplSlot + 1})`;
+}
+
+function selectTplSlot(s) {
+    tplSlot = s;
+    renderTplSlotBtns();
+    drawTplCanvas();
+}
+
+function addTplSlot() {
+    const n = tplRegions.num_slots;
+    tplRegions.slots[String(n)] = emptySlotRegions();
+    tplRegions.num_slots = n + 1;
+    renderTplSlotBtns();
+    drawTplCanvas();
+    saveTplRegions();
+    setNumSlots(tplRegions.num_slots);
+    logMsg($('#tLog'), `Added slot ${n} (Racer ${n + 1})`);
+}
+
+function removeTplSlot() {
+    if (tplRegions.num_slots <= 1) { logMsg($('#tLog'), 'Need at least 1 slot'); return; }
+    const last = tplRegions.num_slots - 1;
+    delete tplRegions.slots[String(last)];
+    tplRegions.num_slots = last;
+    if (tplSlot >= last) { tplSlot = last - 1; }
+    renderTplSlotBtns();
+    drawTplCanvas();
+    saveTplRegions();
+    setNumSlots(tplRegions.num_slots);
+    logMsg($('#tLog'), `Removed slot ${last}`);
+}
+
+function setTplMode(mode) {
+    tplMode = mode;
+    for (const m of ['game','tracker','timer','text']) {
+        const id = `#tplMode${m[0].toUpperCase()+m.slice(1)}`;
+        const el = document.querySelector(id);
+        if (el) el.classList.toggle('btn-active', m === mode);
+    }
+    const textEd = document.getElementById('tplTextEditor');
+    if (textEd) textEd.style.display = mode === 'text' ? 'block' : 'none';
+    drawTplCanvas();
+}
+
+function clearTplRegion() {
+    if (tplMode === 'text') {
+        logMsg($('#tLog'), 'Use the ✕ button on individual text elements to remove them');
+        return;
+    }
+    const slotKey = String(tplSlot);
+    if (!tplRegions.slots[slotKey]) tplRegions.slots[slotKey] = emptySlotRegions();
+    tplRegions.slots[slotKey][tplMode] = null;
+    drawTplCanvas();
+    logMsg($('#tLog'), `Cleared ${tplMode} for Racer ${tplSlot + 1}`);
+    saveTplRegions();
+}
+
+/* ---- Text element management ---- */
+function addTplText() {
+    if (!tplRegions.texts) tplRegions.texts = [];
+    const idx = tplRegions.texts.length;
+    tplRegions.texts.push({
+        id: `txt${idx}`, text: `Text ${idx + 1}`,
+        x: 50, y: 50, width: 200, height: 50,
+        font_size: 36, color: '#ffffff',
+    });
+    renderTplTextList();
+    drawTplCanvas();
+    saveTplRegions();
+}
+
+function removeTplText(idx) {
+    tplRegions.texts.splice(idx, 1);
+    renderTplTextList();
+    drawTplCanvas();
+    saveTplRegions();
+}
+
+function updateTplText(idx, field, value) {
+    if (!tplRegions.texts[idx]) return;
+    tplRegions.texts[idx][field] = value;
+    drawTplCanvas();
+    saveTplRegions();
+}
+
+function renderTplTextList() {
+    const container = document.getElementById('tplTextList');
+    if (!container) return;
+    const texts = tplRegions.texts || [];
+    if (!texts.length) { container.innerHTML = '<div style="font-size:11px;color:var(--text2)">No text elements yet.</div>'; return; }
+    container.innerHTML = texts.map((t, i) => `
+        <div style="display:flex;gap:6px;align-items:end;margin-bottom:4px;flex-wrap:wrap">
+            <div style="flex:1"><label style="font-size:10px">Text</label><input value="${t.text.replace(/"/g,'&quot;')}" onchange="updateTplText(${i},'text',this.value)" style="margin:0"></div>
+            <div style="flex:0 0 60px"><label style="font-size:10px">Size</label><input type="number" value="${t.font_size}" min="8" max="200" onchange="updateTplText(${i},'font_size',+this.value)" style="margin:0"></div>
+            <div style="flex:0 0 44px"><label style="font-size:10px">Color</label><input type="color" value="${t.color}" onchange="updateTplText(${i},'color',this.value)" style="margin:0;padding:2px;height:30px"></div>
+            <button class="br btn-sm" onclick="removeTplText(${i})">✕</button>
+        </div>
+    `).join('');
+}
+
+async function uploadTemplate() {
+    const name = $('#tplName').value.trim() || 'Untitled';
+    const fileInput = document.getElementById('tplFile');
+    const file = fileInput.files[0];
+    if (!file) { logMsg($('#tLog'), 'Select an image file'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+        const r = await fetch(API+`/api/templates/upload?name=${encodeURIComponent(name)}`, { method: 'POST', body: fd });
+        const j = await r.json();
+        if (j.status === 'ok') { logMsg($('#tLog'), `Uploaded: ${j.template.name}`); refreshTemplates(); }
+        else logMsg($('#tLog'), `Error: ${j.error || 'unknown'}`);
+    } catch(e) { logMsg($('#tLog'), `Upload error: ${e.message}`); }
+}
+
+async function refreshTemplates() {
+    try {
+        const r = await apiGet('/api/templates');
+        const sel = $('#tplSelect');
+        sel.innerHTML = '<option value="">— Select —</option>';
+        (r.templates||[]).forEach(t => {
+            const o = document.createElement('option');
+            o.value = t.id; o.textContent = `${t.name} (${(t.created_at||'').split('.')[0]})`;
+            sel.appendChild(o);
+        });
+    } catch(e) { logMsg($('#tLog'), `Error: ${e.message}`); }
+}
+
+async function loadTemplate() {
+    const id = parseInt($('#tplSelect').value);
+    if (!id) return;
+    try {
+        const r = await apiGet(`/api/templates/${id}`);
+        if (r.status !== 'ok') { logMsg($('#tLog'), r.error || 'Load failed'); return; }
+        tplId = id;
+
+        // Support both old flat format and new per-slot format
+        const regions = r.template.regions || {};
+        if (regions.slots) {
+            // New format: { slots: { "0": {...}, "1": {...} }, num_slots: N, texts: [...] }
+            tplRegions = { slots: {}, num_slots: regions.num_slots || 2, texts: regions.texts || [] };
+            for (const [k, v] of Object.entries(regions.slots)) {
+                tplRegions.slots[k] = {
+                    game: v.game || null,
+                    tracker: v.tracker || null,
+                    timer: v.timer || null,
+                };
+            }
+        } else {
+            // Legacy flat format — put everything in slot 0
+            tplRegions = { slots: { "0": emptySlotRegions(), "1": emptySlotRegions() }, num_slots: 2, texts: [] };
+            for (const m of ['game','tracker','timer']) {
+                if (regions[m]) {
+                    // Convert x1/y1/x2/y2 to x/y/width/height
+                    const r2 = regions[m];
+                    if ('x1' in r2) {
+                        tplRegions.slots["0"][m] = { x: r2.x1, y: r2.y1, width: r2.x2 - r2.x1, height: r2.y2 - r2.y1 };
+                    } else {
+                        tplRegions.slots["0"][m] = r2;
+                    }
+                }
+            }
+        }
+        // Ensure all slots exist up to num_slots
+        for (let i = 0; i < tplRegions.num_slots; i++) {
+            if (!tplRegions.slots[String(i)]) tplRegions.slots[String(i)] = emptySlotRegions();
+        }
+        tplSlot = 0;
+        renderTplSlotBtns();
+        renderTplTextList();
+        setNumSlots(tplRegions.num_slots);
+
+        const img = new Image();
+        img.onload = () => {
+            tplImg = img; tplImgW = img.naturalWidth; tplImgH = img.naturalHeight;
+            const canvas = $('#tplCanvas');
+            const cw = $('#tplContainer').clientWidth - 2;
+            const scale = Math.min(1, cw / tplImgW);
+            canvas.width = Math.floor(tplImgW * scale);
+            canvas.height = Math.floor(tplImgH * scale);
+            canvas.style.display = 'block';
+            $('#tplPlaceholder').style.display = 'none';
+            drawTplCanvas();
+        };
+        img.src = 'data:image/jpeg;base64,' + r.template.image_b64;
+        logMsg($('#tLog'), `Loaded template: ${r.template.name} (${tplRegions.num_slots} slots)`);
+    } catch(e) { logMsg($('#tLog'), `Load error: ${e.message}`); }
+}
+
+async function deleteTemplate() {
+    const id = parseInt($('#tplSelect').value);
+    if (!id) return;
+    try {
+        await apiDelete(`/api/templates/${id}`);
+        tplId = null; tplImg = null;
+        $('#tplCanvas').style.display = 'none';
+        $('#tplPlaceholder').style.display = 'block';
+        refreshTemplates();
+    } catch(e) { logMsg($('#tLog'), `Delete error: ${e.message}`); }
+}
+
+// Slot-specific color: slightly offset the hue per slot for visibility
+const SLOT_COLORS = ['#fff', '#ff0', '#0ff', '#f0f', '#f80', '#8f0'];
+
+function drawTplCanvas() {
+    const canvas = $('#tplCanvas');
+    if (!canvas || !tplImg) return;
+    const ctx = canvas.getContext('2d');
+    const cw = canvas.width, ch = canvas.height;
+    ctx.drawImage(tplImg, 0, 0, cw, ch);
+    const sx = cw / tplImgW, sy = ch / tplImgH;
+
+    // Draw ALL slots' regions (dimmed for non-active slots)
+    for (let s = 0; s < tplRegions.num_slots; s++) {
+        const slotData = tplRegions.slots[String(s)] || {};
+        const isActive = (s === tplSlot);
+        const alpha = isActive ? 1.0 : 0.35;
+
+        for (const [mode, rect] of Object.entries(slotData)) {
+            if (!rect) continue;
+            const col = COLORS[mode];
+            if (!col) continue;
+            const rx = rect.x * sx, ry = rect.y * sy;
+            const rw = rect.width * sx, rh = rect.height * sy;
+
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = col.fill; ctx.fillRect(rx, ry, rw, rh);
+            ctx.strokeStyle = col.stroke; ctx.lineWidth = isActive ? 2 : 1;
+            ctx.setLineDash(isActive && mode === tplMode ? [] : [4, 4]);
+            ctx.strokeRect(rx, ry, rw, rh); ctx.setLineDash([]);
+
+            // Label: "R1 Game", "R2 Tracker", etc.
+            ctx.fillStyle = col.stroke;
+            ctx.font = `bold ${isActive ? 12 : 10}px system-ui`;
+            ctx.fillText(`R${s+1} ${MODE_LABEL[mode]}`, rx + 4, ry + 14);
+
+            // Corner handles for active slot regions
+            if (isActive) {
+                const corners = [[rx, ry], [rx+rw, ry], [rx, ry+rh], [rx+rw, ry+rh]];
+                ctx.fillStyle = '#fff'; ctx.strokeStyle = col.stroke; ctx.lineWidth = 2;
+                for (const [cx, cy] of corners) {
+                    ctx.fillRect(cx - 4, cy - 4, 8, 8);
+                    ctx.strokeRect(cx - 4, cy - 4, 8, 8);
+                }
+            }
+            ctx.globalAlpha = 1.0;
+        }
+    }
+
+    // Draw in-progress drag rectangle
+    if (tplAction && tplAction.type === 'draw') {
+        const col = COLORS[tplMode];
+        if (col) {
+            const rx = Math.min(tplAction.startCx, tplAction.currentCx);
+            const ry = Math.min(tplAction.startCy, tplAction.currentCy);
+            const rw = Math.abs(tplAction.currentCx - tplAction.startCx);
+            const rh = Math.abs(tplAction.currentCy - tplAction.startCy);
+            ctx.fillStyle = col.fill; ctx.fillRect(rx, ry, rw, rh);
+            ctx.strokeStyle = col.stroke; ctx.lineWidth = 2;
+            ctx.strokeRect(rx, ry, rw, rh);
+        }
+    }
+
+    // Draw text elements as bounded rectangles
+    for (const [i, t] of (tplRegions.texts || []).entries()) {
+        const tx = t.x * sx, ty = t.y * sy;
+        const tw = (t.width || 100) * sx, th = (t.height || 50) * sy;
+
+        ctx.globalAlpha = tplMode === 'text' ? 1.0 : 0.5;
+        // Bounding box
+        ctx.fillStyle = 'rgba(0,210,210,0.12)';
+        ctx.fillRect(tx, ty, tw, th);
+        ctx.strokeStyle = '#00d2d2';
+        ctx.lineWidth = tplMode === 'text' ? 2 : 1;
+        ctx.setLineDash(tplMode === 'text' ? [] : [3, 3]);
+        ctx.strokeRect(tx, ty, tw, th);
+        ctx.setLineDash([]);
+
+        // Text content (scaled to fit box height)
+        ctx.fillStyle = t.color || '#ffffff';
+        const fontSize = Math.max(8, Math.round(th * 0.7));
+        ctx.font = `bold ${fontSize}px system-ui`;
+        ctx.fillText(t.text || '', tx + 4, ty + fontSize);
+
+        // Corner handles (in text mode)
+        if (tplMode === 'text') {
+            const corners = [[tx, ty], [tx+tw, ty], [tx, ty+th], [tx+tw, ty+th]];
+            ctx.fillStyle = '#fff'; ctx.strokeStyle = '#00d2d2'; ctx.lineWidth = 2;
+            for (const [cx, cy] of corners) {
+                ctx.fillRect(cx - 4, cy - 4, 8, 8);
+                ctx.strokeRect(cx - 4, cy - 4, 8, 8);
+            }
+        }
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+function tplCanvasToImage(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    const ix = Math.round(cx / canvas.width * tplImgW);
+    const iy = Math.round(cy / canvas.height * tplImgH);
+    return { cx, cy, ix: Math.max(0, Math.min(tplImgW-1, ix)), iy: Math.max(0, Math.min(tplImgH-1, iy)) };
+}
+
+/* ---- Hit-testing for template regions ---- */
+function hitTplRegion(canvas, e) {
+    if (!tplImg) return null;
+    const sx = canvas.width / tplImgW, sy = canvas.height / tplImgH;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const H = 8; // handle hit radius
+
+    // Check text elements first (rendered on top)
+    for (let i = (tplRegions.texts || []).length - 1; i >= 0; i--) {
+        const t = tplRegions.texts[i];
+        const rx = t.x * sx, ry = t.y * sy;
+        const rw = (t.width || 100) * sx, rh = (t.height || 50) * sy;
+        for (const [name, cx2, cy2] of [['tl',rx,ry],['tr',rx+rw,ry],['bl',rx,ry+rh],['br',rx+rw,ry+rh]]) {
+            if (Math.abs(mx - cx2) < H && Math.abs(my - cy2) < H)
+                return { kind: 'text', idx: i, hit: name };
+        }
+        if (mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh)
+            return { kind: 'text', idx: i, hit: 'body' };
+    }
+
+    // Check active slot regions (reverse order so topmost drawn is hit first)
+    const slotData = tplRegions.slots[String(tplSlot)] || {};
+    for (const mode of ['timer', 'tracker', 'game']) {
+        const r = slotData[mode];
+        if (!r) continue;
+        const rx = r.x * sx, ry = r.y * sy;
+        const rw = r.width * sx, rh = r.height * sy;
+        for (const [name, cx2, cy2] of [['tl',rx,ry],['tr',rx+rw,ry],['bl',rx,ry+rh],['br',rx+rw,ry+rh]]) {
+            if (Math.abs(mx - cx2) < H && Math.abs(my - cy2) < H)
+                return { kind: 'slot', slotIdx: tplSlot, mode, hit: name };
+        }
+        if (mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh)
+            return { kind: 'slot', slotIdx: tplSlot, mode, hit: 'body' };
+    }
+    return null;
+}
+
+/* ---- Template canvas event handlers ---- */
+function onTplMouseDown(e) {
+    const tc = $('#tplCanvas');
+    if (!tplImg) return;
+    e.preventDefault();
+    const { cx, cy, ix, iy } = tplCanvasToImage(tc, e);
+    const hit = hitTplRegion(tc, e);
+
+    if (hit) {
+        let origRect;
+        if (hit.kind === 'text') {
+            const t = tplRegions.texts[hit.idx];
+            origRect = { x: t.x, y: t.y, width: t.width || 100, height: t.height || 50 };
+        } else {
+            origRect = { ...tplRegions.slots[String(hit.slotIdx)][hit.mode] };
+        }
+        if (hit.hit === 'body') {
+            tplAction = { type: 'move', target: hit, startIx: ix, startIy: iy, origRect, offsetX: ix - origRect.x, offsetY: iy - origRect.y };
+        } else {
+            tplAction = { type: 'resize', target: hit, startIx: ix, startIy: iy, origRect, corner: hit.hit };
+        }
+        // Auto-select mode of the hit region
+        if (hit.kind === 'slot' && hit.mode !== tplMode) setTplMode(hit.mode);
+        if (hit.kind === 'text' && tplMode !== 'text') setTplMode('text');
+        return;
+    }
+
+    // No hit: start drawing a new region (game/tracker/timer only)
+    if (tplMode !== 'text') {
+        tplAction = { type: 'draw', startIx: ix, startIy: iy, currentIx: ix, currentIy: iy, startCx: cx, startCy: cy, currentCx: cx, currentCy: cy };
+    }
+}
+
+function onTplMouseMove(e) {
+    const tc = $('#tplCanvas');
+    if (!tplImg) return;
+    const { cx, cy, ix, iy } = tplCanvasToImage(tc, e);
+
+    if (!tplAction) {
+        const hit = hitTplRegion(tc, e);
+        if (hit) {
+            tc.style.cursor = hit.hit === 'body' ? 'move' :
+                (hit.hit === 'tl' || hit.hit === 'br') ? 'nwse-resize' : 'nesw-resize';
+        } else {
+            tc.style.cursor = tplMode === 'text' ? 'default' : 'crosshair';
+        }
+        return;
+    }
+
+    if (tplAction.type === 'move') {
+        const newX = Math.max(0, ix - tplAction.offsetX);
+        const newY = Math.max(0, iy - tplAction.offsetY);
+        if (tplAction.target.kind === 'text') {
+            const t = tplRegions.texts[tplAction.target.idx];
+            t.x = newX; t.y = newY;
+        } else {
+            const r = tplRegions.slots[String(tplAction.target.slotIdx)][tplAction.target.mode];
+            r.x = newX; r.y = newY;
+        }
+        drawTplCanvas();
+    } else if (tplAction.type === 'resize') {
+        const orig = tplAction.origRect;
+        let x1 = orig.x, y1 = orig.y, x2 = orig.x + orig.width, y2 = orig.y + orig.height;
+        const c = tplAction.corner;
+        if (c === 'tl') { x1 = ix; y1 = iy; }
+        else if (c === 'tr') { x2 = ix; y1 = iy; }
+        else if (c === 'bl') { x1 = ix; y2 = iy; }
+        else if (c === 'br') { x2 = ix; y2 = iy; }
+        const nr = { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) };
+        if (tplAction.target.kind === 'text') {
+            const t = tplRegions.texts[tplAction.target.idx];
+            t.x = nr.x; t.y = nr.y; t.width = nr.width; t.height = nr.height;
+        } else {
+            tplRegions.slots[String(tplAction.target.slotIdx)][tplAction.target.mode] = nr;
+        }
+        drawTplCanvas();
+    } else if (tplAction.type === 'draw') {
+        tplAction.currentIx = ix; tplAction.currentIy = iy;
+        tplAction.currentCx = cx; tplAction.currentCy = cy;
+        drawTplCanvas();
+    }
+}
+
+function onTplMouseUp(e) {
+    if (!tplAction) return;
+    const tc = $('#tplCanvas');
+
+    if (tplAction.type === 'draw') {
+        const { ix, iy } = tplCanvasToImage(tc, e);
+        const x = Math.min(tplAction.startIx, ix), y = Math.min(tplAction.startIy, iy);
+        const w = Math.abs(ix - tplAction.startIx), h = Math.abs(iy - tplAction.startIy);
+        if (w >= 4 && h >= 4) {
+            const slotKey = String(tplSlot);
+            if (!tplRegions.slots[slotKey]) tplRegions.slots[slotKey] = emptySlotRegions();
+            tplRegions.slots[slotKey][tplMode] = { x, y, width: w, height: h };
+            logMsg($('#tLog'), `R${tplSlot+1} ${MODE_LABEL[tplMode]}: (${x},${y}) ${w}×${h}`);
+        }
+    }
+
+    if (tplAction.type === 'move' || tplAction.type === 'resize') {
+        const t = tplAction.target;
+        if (t.kind === 'text') {
+            const txt = tplRegions.texts[t.idx];
+            logMsg($('#tLog'), `Text "${txt.text}": (${Math.round(txt.x)},${Math.round(txt.y)}) ${Math.round(txt.width)}×${Math.round(txt.height)}`);
+        } else {
+            const r = tplRegions.slots[String(t.slotIdx)][t.mode];
+            logMsg($('#tLog'), `R${t.slotIdx+1} ${MODE_LABEL[t.mode]}: (${Math.round(r.x)},${Math.round(r.y)}) ${Math.round(r.width)}×${Math.round(r.height)}`);
+        }
+    }
+
+    tplAction = null;
+    drawTplCanvas();
+    saveTplRegions();
+}
+
+function onTplMouseLeave() {
+    if (tplAction) { tplAction = null; drawTplCanvas(); }
+}
+
+async function saveTplRegions() {
+    if (!tplId) return;
+    try { await apiPut(`/api/templates/${tplId}/regions`, { regions: tplRegions }); }
+    catch(e) { logMsg($('#tLog'), `Save error: ${e.message}`); }
+}
+
+async function applyTemplateToOBS() {
+    if (!tplId) { logMsg($('#tLog'), 'No template selected'); return; }
+    try {
+        const r = await apiPost(`/api/templates/${tplId}/apply`, {});
+        if (r.status === 'ok') {
+            logMsg($('#tLog'), `Applied template to OBS: ${(r.applied||[]).join(', ')}`);
+        } else {
+            logMsg($('#tLog'), `Apply error: ${r.error || 'unknown'}`);
+        }
+    } catch(e) { logMsg($('#tLog'), `Apply error: ${e.message}`); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    renderTplSlotBtns();
+    renderTplTextList();
+    const tc = $('#tplCanvas');
+    tc.addEventListener('mousedown', onTplMouseDown);
+    tc.addEventListener('mousemove', onTplMouseMove);
+    tc.addEventListener('mouseup', onTplMouseUp);
+    tc.addEventListener('mouseleave', onTplMouseLeave);
+});
+
+/* ================================================================
+   INIT
+   ================================================================ */
+(async () => {
+    // Initialize default 2 slots and render all dynamic UI
+    ensureCropSlot(0); ensureCropSlot(1);
+    setNumSlots(2);
+
+    // Check if there's an active template to set the slot count
+    try {
+        const at = await apiGet('/api/active-template');
+        if (at.template_id && at.num_slots) setNumSlots(at.num_slots);
+    } catch {}
+
+    try { const r = await apiGet('/api/obs/status'); if (r.connected) { $('#obsDot').className = 'dot on'; loadSc(); } } catch {}
+    try {
+        const r = await apiGet('/api/ingest/status');
+        for (const [s, i] of Object.entries(r.feeds||{})) {
+            setDot(+s, i.running);
+            const urlEl = document.getElementById(`u${s}`);
+            if (urlEl && i.url) urlEl.value = i.url;
+        }
+    } catch {}
+    setCropMode('game');
+    loadPresets();
+    refreshTemplates();
+})();
+</script>
+</body>
+</html>

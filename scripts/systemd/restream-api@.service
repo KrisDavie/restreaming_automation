@@ -1,0 +1,22 @@
+[Unit]
+Description=Restreaming Automation API Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/restreaming_automation
+ExecStart=/opt/restreaming_automation/venv/bin/python -m src
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/restreaming_automation
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

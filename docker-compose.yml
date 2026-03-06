@@ -1,0 +1,38 @@
+services:
+  # ── Production ──────────────────────────────────────────────
+  restream-api:
+    build:
+      context: .
+      target: production
+    container_name: restream-api
+    restart: unless-stopped
+    network_mode: host             # direct access to host ports (OBS, UDP)
+    volumes:
+      - ./data:/app/data          # SQLite DB + template uploads
+      - ./.env:/app/.env:ro       # Environment config
+    env_file:
+      - .env
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8008
+
+  # ── Development (live-reload) ───────────────────────────────
+  restream-dev:
+    build:
+      context: .
+      target: development
+    container_name: restream-dev
+    restart: unless-stopped
+    network_mode: host             # direct access to host ports (OBS, UDP)
+    profiles: ["dev"]              # only starts with --profile dev
+    volumes:
+      - ./src:/app/src             # bind-mount source for live-reload
+      - ./scripts:/app/scripts
+      - ./templates:/app/templates
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    env_file:
+      - .env
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8008
