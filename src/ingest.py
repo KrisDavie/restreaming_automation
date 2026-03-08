@@ -157,6 +157,58 @@ class IngestManager:
     def get_feed(self, slot: int) -> IngestFeed | None:
         return self._feeds.get(slot)
 
+    async def query_qualities(self, url: str) -> list[str]:
+        """Ask streamlink which stream qualities are available for *url*.
+
+        Returns a list of quality names sorted best-first, e.g.
+        ``['1080p60', '1080p', '720p60', '720p', '480p', '360p', '160p', 'audio_only']``.
+        The special names ``best`` and ``worst`` are prepended.
+        """
+        streamlink_bin = shutil.which("streamlink")
+        if not streamlink_bin:
+            raise RuntimeError("streamlink not found on PATH")
+
+        proc = await asyncio.create_subprocess_exec(
+            streamlink_bin, "--json", url,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+
+        import json
+        try:
+            data = json.loads(stdout)
+        except (json.JSONDecodeError, ValueError):
+            return ["best", "worst"]
+
+        streams = data.get("streams", {})
+        if not streams:
+            return ["best", "worst"]
+
+        # Build ordered list: resolution qualities first (descending), then specials
+        resolution_order: list[str] = []
+        specials: list[str] = []
+        for name in streams:
+            if name in ("best", "worst"):
+                continue
+            # Prioritize by approximate pixel height for sorting
+            m = re.match(r'(\d+)p', name)
+            if m:
+                resolution_order.append(name)
+            else:
+                specials.append(name)
+
+        # Sort resolution streams descending by height then fps
+        def _sort_key(n: str) -> tuple[int, int]:
+            m = re.match(r'(\d+)p(\d+)?', n)
+            if m:
+                return (-int(m.group(1)), -int(m.group(2) or 0))
+            return (0, 0)
+
+        resolution_order.sort(key=_sort_key)
+
+        return ["best"] + resolution_order + specials + ["worst"]
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

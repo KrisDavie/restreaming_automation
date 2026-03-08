@@ -108,6 +108,17 @@ class AudioSwitchRequest(BaseModel):
     active_slot: int  # 0-based slot to unmute; -1 = mute all
     num_slots: int = 2  # total number of player slots
 
+class AudioVolumeRequest(BaseModel):
+    input_name: str
+    volume_db: float  # dB: 0 = unity, negative = quieter, max ~26
+
+class AudioMuteRequest(BaseModel):
+    input_name: str
+    muted: bool
+
+class DiscordSourceRequest(BaseModel):
+    device_id: str = "default"  # PulseAudio device ID
+
 class DetectResponse(BaseModel):
     success: bool
     confidence: float = 0.0
@@ -163,13 +174,22 @@ def _obs_image_path(path: str) -> str:
     image paths (``/app/data/...``) are not reachable by OBS.  If
     ``OBS_DATA_DIR`` is set, replace the container ``data/`` prefix with
     the host-side equivalent.
+
+    Normalises path separators to match the OBS host: if OBS_DATA_DIR
+    contains a backslash (Windows), the final path uses backslashes;
+    otherwise forward slashes.
     """
     host_dir = config.obs_data_dir
     if not host_dir:
         return path
     container_data = str(_DATA_DIR)
     if path.startswith(container_data):
-        return host_dir + path[len(container_data):]
+        relative = path[len(container_data):]
+        # Detect Windows host paths (contain backslash or drive letter)
+        if "\\" in host_dir or (len(host_dir) >= 2 and host_dir[1] == ":"):
+            relative = relative.replace("/", "\\")
+        result = host_dir + relative
+        return result
     return path
 
 
@@ -331,6 +351,19 @@ async def get_active_template() -> dict[str, Any]:
         }
     except KeyError:
         return {"template_id": None, "num_slots": 2}
+
+
+@app.get("/api/ingest/qualities")
+async def ingest_qualities(url: str) -> dict[str, Any]:
+    """Query available stream qualities for a URL via streamlink."""
+    if not url.strip():
+        return {"status": "error", "error": "No URL provided"}
+    try:
+        qualities = await ingest.query_qualities(url.strip())
+        return {"status": "ok", "qualities": qualities}
+    except Exception as exc:
+        log.warning("Quality query failed for %s: %s", url, exc)
+        return {"status": "error", "error": str(exc), "qualities": ["best", "worst"]}
 
 
 @app.post("/api/ingest/stop")
@@ -583,6 +616,82 @@ async def obs_audio_status(num_slots: int = 2) -> dict[str, Any]:
         except Exception:
             result[str(slot)] = {"source": source_name, "muted": None}
     return result
+
+
+@app.get("/api/obs/audio/mixer")
+async def obs_audio_mixer() -> dict[str, Any]:
+    """Return volume & mute status for all audio-capable inputs."""
+    if not obs.connected:
+        return {"status": "error", "error": "OBS not connected", "inputs": []}
+    inputs = await obs.list_audio_inputs()
+    return {"status": "ok", "inputs": inputs}
+
+
+@app.post("/api/obs/audio/volume")
+async def obs_audio_volume(req: AudioVolumeRequest) -> dict[str, Any]:
+    """Set volume (dB) for any OBS input."""
+    await obs.set_input_volume(req.input_name, req.volume_db)
+    await broadcast("audio:volume", {"input": req.input_name, "db": req.volume_db})
+    return {"status": "ok"}
+
+
+@app.post("/api/obs/audio/mute")
+async def obs_audio_mute(req: AudioMuteRequest) -> dict[str, Any]:
+    """Mute or unmute any OBS input."""
+    await obs.mute_input(req.input_name, req.muted)
+    await broadcast("audio:mute", {"input": req.input_name, "muted": req.muted})
+    return {"status": "ok"}
+
+
+@app.post("/api/obs/audio/discord")
+async def obs_audio_discord(req: DiscordSourceRequest) -> dict[str, Any]:
+    """Create (or update) a Discord / commentary audio capture source."""
+    if not obs.connected:
+        return {"status": "error", "error": "OBS not connected"}
+    try:
+        await obs.create_audio_capture(RACE_SCENE, "Commentary", req.device_id)
+        return {"status": "ok", "source": "Commentary"}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+@app.get("/api/obs/audio/devices")
+async def obs_audio_devices() -> dict[str, Any]:
+    """List audio output capture devices known to OBS.
+
+    Creates a temporary probe source of the platform-appropriate kind,
+    queries its device_id property items, then removes it.
+    Falls back to a single "Default" entry on failure.
+    """
+    if not obs.connected:
+        return {"status": "error", "error": "OBS not connected", "devices": []}
+    probe_name = "_device_probe_tmp"
+    kind = obs._audio_capture_kind()
+    try:
+        # Create a hidden temporary source so we can list its device options
+        try:
+            await obs.request("CreateInput", {
+                "sceneName": RACE_SCENE,
+                "inputName": probe_name,
+                "inputKind": kind,
+                "inputSettings": {},
+                "sceneItemEnabled": False,
+            })
+        except Exception:
+            pass  # may already exist from a previous failed cleanup
+        resp = await obs.request("GetInputPropertiesListPropertyItems", {
+            "inputName": probe_name,
+            "propertyName": "device_id",
+        })
+        items = resp.get("propertyItems", [])
+        return {"status": "ok", "devices": items}
+    except Exception:
+        return {"status": "ok", "devices": [{"itemName": "Default", "itemValue": "default"}]}
+    finally:
+        try:
+            await obs.request("RemoveInput", {"inputName": probe_name})
+        except Exception:
+            pass
 
 
 @app.post("/api/obs/text")

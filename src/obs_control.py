@@ -56,6 +56,7 @@ class OBSController:
         self._recv_task: asyncio.Task[None] | None = None
         self._connected = False
         self._scene_items: dict[str, int] = {}  # logical_name → sceneItemId
+        self._obs_platform: str = ""  # "windows", "macos", or "linux"
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -108,6 +109,22 @@ class OBSController:
         self._recv_task = asyncio.create_task(self._recv_loop())
         self._connected = True
         log.info("Connected to OBS WebSocket (negotiated rpcVersion 1)")
+
+        # Detect OBS host platform for source-kind selection
+        try:
+            ver = await self.request("GetVersion", {})
+            plat = ver.get("platform", "").lower()
+            if "win" in plat:
+                self._obs_platform = "windows"
+            elif "mac" in plat or "darwin" in plat:
+                self._obs_platform = "macos"
+            else:
+                self._obs_platform = "linux"
+            log.info("OBS platform detected: %s (raw: %s)",
+                     self._obs_platform, ver.get("platform", "?"))
+        except Exception:
+            self._obs_platform = "linux"
+            log.warning("Could not detect OBS platform, defaulting to linux")
 
     async def disconnect(self) -> None:
         self._connected = False
@@ -410,6 +427,81 @@ class OBSController:
     async def get_input_mute(self, input_name: str) -> bool:
         resp = await self.request("GetInputMute", {"inputName": input_name})
         return resp.get("inputMuted", True)
+
+    async def set_input_volume(self, input_name: str, db: float) -> None:
+        """Set the volume of an input in decibels (0 = unity, -100 = silence)."""
+        await self.request("SetInputVolume", {
+            "inputName": input_name,
+            "inputVolumeDb": max(-100.0, min(26.0, db)),
+        })
+        log.info("Volume for '%s' set to %.1f dB", input_name, db)
+
+    async def get_input_volume(self, input_name: str) -> dict[str, float]:
+        """Return ``{"db": float, "mul": float}`` for an input."""
+        resp = await self.request("GetInputVolume", {"inputName": input_name})
+        return {
+            "db": resp.get("inputVolumeDb", 0.0),
+            "mul": resp.get("inputVolumeMul", 1.0),
+        }
+
+    def _audio_capture_kind(self) -> str:
+        """Return the OBS input kind for audio output capture on the current platform."""
+        if self._obs_platform == "windows":
+            return "wasapi_output_capture"
+        if self._obs_platform == "macos":
+            return "coreaudio_output_capture"
+        return "pulse_output_capture"
+
+    async def create_audio_capture(self, scene_name: str, source_name: str,
+                                   device_id: str = "default") -> None:
+        """Create or update an audio output capture source.
+
+        Useful for capturing Discord or other desktop audio.
+        Automatically selects the correct source kind for the OBS host
+        platform (WASAPI on Windows, CoreAudio on macOS, PulseAudio on Linux).
+        """
+        settings: dict[str, Any] = {"device_id": device_id}
+        kind = self._audio_capture_kind()
+        try:
+            await self.request("GetInputSettings", {"inputName": source_name})
+            await self.request("SetInputSettings", {
+                "inputName": source_name,
+                "inputSettings": settings,
+            })
+        except OBSRequestError:
+            await self.request("CreateInput", {
+                "sceneName": scene_name,
+                "inputName": source_name,
+                "inputKind": kind,
+                "inputSettings": settings,
+                "sceneItemEnabled": True,
+            })
+        log.info("Audio capture '%s' (%s) → device '%s'", source_name, kind, device_id)
+
+    async def list_audio_inputs(self) -> list[dict[str, Any]]:
+        """Return info for all OBS inputs that produce audio."""
+        resp = await self.request("GetInputList", {})
+        result = []
+        for inp in resp.get("inputs", []):
+            kind = inp.get("inputKind", "")
+            # Skip image/text/browser sources that have no audio
+            if kind in ("image_source", "text_ft2_source_v2", "browser_source",
+                        "color_source_v3"):
+                continue
+            name = inp["inputName"]
+            try:
+                vol = await self.get_input_volume(name)
+                muted = await self.get_input_mute(name)
+                result.append({
+                    "name": name,
+                    "kind": kind,
+                    "volume_db": vol["db"],
+                    "volume_mul": vol["mul"],
+                    "muted": muted,
+                })
+            except OBSRequestError:
+                pass
+        return result
 
     async def ensure_scene(self, scene_name: str) -> None:
         """Create a scene if it doesn't already exist."""
