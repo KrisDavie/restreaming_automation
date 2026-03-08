@@ -1,5 +1,9 @@
+# NOTE: network_mode: host is used on Linux for direct port access.
+# On Docker Desktop (Windows / macOS) host networking is not supported;
+# use the "desktop" profile which maps ports explicitly instead.
+
 services:
-  # ── Production ──────────────────────────────────────────────
+  # ── Production (Linux – host networking) ────────────────────
   restream-api:
     build:
       context: .
@@ -16,7 +20,32 @@ services:
       - API_HOST=0.0.0.0
       - API_PORT=8008
 
-  # ── Development (live-reload) ───────────────────────────────
+  # ── Production (Docker Desktop – Windows / macOS) ───────────
+  restream-api-desktop:
+    build:
+      context: .
+      target: production
+    container_name: restream-api
+    restart: unless-stopped
+    profiles: ["desktop"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Linux compat
+    ports:
+      - "${API_PORT:-8008}:8008"          # Dashboard / API
+      - "${INGEST_BASE_PORT:-1234}:1234/udp"  # Slot 0
+      - "1235:1235/udp"                   # Slot 1
+      - "1236:1236/udp"                   # Slot 2
+      - "1237:1237/udp"                   # Slot 3
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    env_file:
+      - .env
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8008
+
+  # ── Development (Linux – host networking + live-reload) ─────
   restream-dev:
     build:
       context: .
@@ -27,6 +56,34 @@ services:
     profiles: ["dev"]              # only starts with --profile dev
     volumes:
       - ./src:/app/src             # bind-mount source for live-reload
+      - ./scripts:/app/scripts
+      - ./templates:/app/templates
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    env_file:
+      - .env
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8008
+
+  # ── Development (Docker Desktop – Windows / macOS) ──────────
+  restream-dev-desktop:
+    build:
+      context: .
+      target: development
+    container_name: restream-dev
+    restart: unless-stopped
+    profiles: ["dev-desktop"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Linux compat
+    ports:
+      - "${API_PORT:-8008}:8008"
+      - "${INGEST_BASE_PORT:-1234}:1234/udp"
+      - "1235:1235/udp"
+      - "1236:1236/udp"
+      - "1237:1237/udp"
+    volumes:
+      - ./src:/app/src
       - ./scripts:/app/scripts
       - ./templates:/app/templates
       - ./data:/app/data

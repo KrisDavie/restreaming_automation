@@ -77,6 +77,15 @@
         .coords-bar span { background: var(--bg3); padding: 2px 8px; border-radius: 3px; }
         .audio-btn.active { outline: 2px solid var(--green); outline-offset: 1px; }
 
+        /* Audio Mixer */
+        .mixer-strip { display:flex; align-items:center; gap:10px; padding:6px 8px; border-bottom:1px solid var(--border); }
+        .mixer-strip:last-child { border-bottom:none; }
+        .mixer-strip .strip-name { width:120px; font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mixer-strip input[type=range] { flex:1; min-width:80px; accent-color: var(--teal); }
+        .mixer-strip .db-label { width:55px; font-family:monospace; font-size:11px; text-align:right; }
+        .mixer-strip .mute-btn { padding:2px 8px; font-size:14px; cursor:pointer; background:var(--bg3); border:1px solid var(--border); border-radius:4px; }
+        .mixer-strip .mute-btn.muted { background:#c62828; color:#fff; }
+
         /* Crop input fields */
         .crop-inputs { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-top: 8px; }
         .crop-inputs label { margin: 0; }
@@ -159,10 +168,23 @@
             </div>
 
             <div class="card">
-                <div class="card-header teal">Audio Source</div>
+                <div class="card-header teal">Audio Mixer</div>
                 <div class="card-body">
-                    <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Select which racer's audio to broadcast:</div>
+                    <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Quick source select (mutes others):</div>
                     <div class="btn-group" id="audioBtns"></div>
+                    <hr style="border-color:var(--border);margin:10px 0">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                        <span style="font-size:13px;font-weight:600">Per-Source Volume</span>
+                        <button class="bb btn-sm" onclick="refreshMixer()">🔄 Refresh</button>
+                    </div>
+                    <div id="mixerStrips" style="margin-bottom:10px"></div>
+                    <hr style="border-color:var(--border);margin:10px 0">
+                    <div style="font-size:13px;font-weight:600;margin-bottom:6px">🎙️ Discord / Commentary</div>
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        <select id="discordDevice" style="flex:1;min-width:120px"><option value="default">Default</option></select>
+                        <button class="bt btn-sm" onclick="addDiscord()">Add Source</button>
+                        <button class="bb btn-sm" onclick="fetchDevices()">Scan Devices</button>
+                    </div>
                     <div class="log" id="aLog"></div>
                 </div>
             </div>
@@ -397,6 +419,7 @@ function setNumSlots(n) {
     renderIngestTabs();
     renderCropSlotBtns();
     renderAudioBtns();
+    refreshMixer();
     renderSyncBtns();
     document.getElementById('ingestSlotCount').textContent = `${numSlots} Slots`;
 }
@@ -429,8 +452,16 @@ function renderIngestTabs() {
             <h4><span class="dot off" id="d${i}"></span> Racer ${i + 1}</h4>
             <label>URL</label>
             <input id="u${i}" placeholder="twitch.tv/racer${i+1} or twitch.tv/videos/123?t=1h0m28s">
-            <div class="row">
-                <div><label>VOD Start Time</label><input id="t${i}" placeholder="e.g. 1h5m30s or 00:05:30 or 330"></div>
+            <div class="row" style="align-items:flex-end">
+                <div style="flex:1"><label>Quality</label>
+                    <div style="display:flex;gap:4px">
+                        <select id="q${i}" style="flex:1;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px">
+                            <option value="best" selected>best</option>
+                        </select>
+                        <button class="bb btn-sm" onclick="fetchQualities(${i})" id="qBtn${i}" style="white-space:nowrap">\ud83d\udd0d Fetch</button>
+                    </div>
+                </div>
+                <div style="flex:1"><label>VOD Start Time</label><input id="t${i}" placeholder="e.g. 1h5m30s or 00:05:30 or 330"></div>
             </div>
             <div class="btn-group">
                 <button class="bg btn-sm" onclick="startF(${i})">\u25b6 Start</button>
@@ -517,6 +548,7 @@ function handleEvent(ev, d) {
     if (ev==='obs:connected')  { $('#obsDot').className='dot on'; loadSc(); }
     if (ev==='obs:disconnected') $('#obsDot').className='dot off';
     if (ev==='audio:switched') updateAudioUI(d.active_slot);
+    if (ev==='audio:volume' || ev==='audio:mute') refreshMixer();
     if (ev==='obs:source_created') logMsg($('#oLog'), `Auto-created source: ${d.source}`);
     if (ev==='template:applied') {
         logMsg($('#tLog'), `Template "${d.template_name}" applied: ${(d.applied||[]).join(', ')}`);
@@ -529,13 +561,37 @@ function handleEvent(ev, d) {
    ================================================================ */
 function setDot(s, on) { const e = document.getElementById(`d${s}`); if (e) e.className = `dot ${on?'on':'off'}`; }
 
+async function fetchQualities(s) {
+    const u = document.getElementById(`u${s}`).value.trim();
+    if (!u) { logMsg($('#iLog'), `Slot ${s}: enter a URL first`); return; }
+    const btn = document.getElementById(`qBtn${s}`);
+    const sel = document.getElementById(`q${s}`);
+    const prev = btn.textContent;
+    btn.textContent = '⌛…'; btn.disabled = true;
+    try {
+        const r = await apiGet(`/api/ingest/qualities?url=${encodeURIComponent(u)}`);
+        const qs = r.qualities || ['best','worst'];
+        const curVal = sel.value;
+        sel.innerHTML = '';
+        for (const q of qs) {
+            const opt = document.createElement('option');
+            opt.value = q; opt.textContent = q;
+            sel.appendChild(opt);
+        }
+        if (qs.includes(curVal)) sel.value = curVal;
+        logMsg($('#iLog'), `Slot ${s}: ${qs.length} qualities found`);
+    } catch(e) { logMsg($('#iLog'), `Slot ${s}: quality fetch failed — ${e.message}`); }
+    finally { btn.textContent = prev; btn.disabled = false; }
+}
+
 async function startF(s) {
     const u = document.getElementById(`u${s}`).value.trim();
     if (!u) { logMsg($('#iLog'),`Slot ${s}: no URL`); return; }
+    const quality = document.getElementById(`q${s}`).value || 'best';
     const startOffset = document.getElementById(`t${s}`).value.trim();
     showLoading(`load${s}`, 'Starting feed…');
     try {
-        const r = await apiPost('/api/ingest/start',{slot:s, url:u, quality:'best', start_offset: startOffset});
+        const r = await apiPost('/api/ingest/start',{slot:s, url:u, quality:quality, start_offset: startOffset});
         logMsg($('#iLog'),`Slot ${s}: ${r.local_url}`);
         setDot(s, true);
         showLoading(`load${s}`, 'Waiting for first frame…');
@@ -949,7 +1005,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ================================================================
-   AUDIO
+   AUDIO MIXER
    ================================================================ */
 function updateAudioUI(slot) {
     for (let i = 0; i < numSlots; i++) {
@@ -971,6 +1027,87 @@ async function muteAll() {
         logMsg($('#aLog'), 'All audio muted');
     }
     catch(e) { logMsg($('#aLog'), `Error: ${e.message}`); }
+}
+
+/* --- Per-source mixer --- */
+let _mixerDebounce = {};
+function buildMixerStrip(inp) {
+    const div = document.createElement('div');
+    div.className = 'mixer-strip';
+    div.dataset.inputName = inp.name;
+    const db = inp.volume_db ?? 0;
+    const pct = Math.round(((db + 100) / 126) * 100);
+    div.innerHTML = `
+        <span class="strip-name" title="${inp.name}">${inp.name}</span>
+        <input type="range" min="0" max="100" value="${pct}"
+               oninput="mixerSlide(this, '${inp.name.replace(/'/g,"\\'")}')"
+               title="${db.toFixed(1)} dB">
+        <span class="db-label">${db.toFixed(1)} dB</span>
+        <button class="mute-btn${inp.muted ? ' muted':''}"
+                onclick="mixerMute(this, '${inp.name.replace(/'/g,"\\'")}')">${inp.muted ? '🔇':'🔊'}</button>`;
+    return div;
+}
+
+function mixerSlide(el, name) {
+    const pct = parseInt(el.value);
+    const db = (pct / 100) * 126 - 100;
+    el.title = db.toFixed(1) + ' dB';
+    const label = el.parentElement.querySelector('.db-label');
+    if (label) label.textContent = db.toFixed(1) + ' dB';
+    clearTimeout(_mixerDebounce[name]);
+    _mixerDebounce[name] = setTimeout(() => {
+        apiPost('/api/obs/audio/volume', { input_name: name, volume_db: parseFloat(db.toFixed(1)) });
+    }, 150);
+}
+
+async function mixerMute(btn, name) {
+    const willMute = !btn.classList.contains('muted');
+    try {
+        await apiPost('/api/obs/audio/mute', { input_name: name, muted: willMute });
+        btn.classList.toggle('muted', willMute);
+        btn.textContent = willMute ? '🔇' : '🔊';
+    } catch(e) { logMsg($('#aLog'), `Mute error: ${e.message}`); }
+}
+
+async function refreshMixer() {
+    try {
+        const r = await apiGet('/api/obs/audio/mixer');
+        const container = document.getElementById('mixerStrips');
+        if (!container) return;
+        container.innerHTML = '';
+        if (r.status !== 'ok') { container.textContent = r.error || 'Error'; return; }
+        for (const inp of r.inputs) container.appendChild(buildMixerStrip(inp));
+        if (!r.inputs.length) container.innerHTML = '<div style="font-size:12px;color:var(--text2)">No audio inputs found</div>';
+    } catch(e) { logMsg($('#aLog'), `Mixer error: ${e.message}`); }
+}
+
+/* --- Discord / Commentary --- */
+async function fetchDevices() {
+    try {
+        const r = await apiGet('/api/obs/audio/devices');
+        const sel = document.getElementById('discordDevice');
+        if (!sel) return;
+        sel.innerHTML = '';
+        for (const d of (r.devices || [])) {
+            const opt = document.createElement('option');
+            opt.value = d.itemValue || d.itemName;
+            opt.textContent = d.itemName;
+            sel.appendChild(opt);
+        }
+        logMsg($('#aLog'), `Found ${(r.devices||[]).length} audio device(s)`);
+    } catch(e) { logMsg($('#aLog'), `Device scan error: ${e.message}`); }
+}
+
+async function addDiscord() {
+    const sel = document.getElementById('discordDevice');
+    const deviceId = sel ? sel.value : 'default';
+    try {
+        const r = await apiPost('/api/obs/audio/discord', { device_id: deviceId });
+        if (r.status === 'ok') {
+            logMsg($('#aLog'), `Commentary source created (device: ${deviceId})`);
+            setTimeout(refreshMixer, 500);
+        } else logMsg($('#aLog'), `Discord error: ${r.error}`);
+    } catch(e) { logMsg($('#aLog'), `Discord error: ${e.message}`); }
 }
 
 /* ================================================================
