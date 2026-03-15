@@ -9,6 +9,8 @@ that can be forwarded to OBS via the control layer.
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -304,9 +306,6 @@ def capture_frame_from_url(url: str, timeout_s: int = 15) -> NDArray[np.uint8]:
     This eliminates the ``non-existing PPS 0 referenced`` errors that occur
     when joining MPEG-TS/UDP streams mid-GOP with OpenCV.
     """
-    import shutil
-    import subprocess
-
     ffmpeg_bin = shutil.which("ffmpeg")
     if not ffmpeg_bin:
         raise RuntimeError("ffmpeg not found on PATH")
@@ -340,22 +339,3 @@ def capture_frame_from_url(url: str, timeout_s: int = 15) -> NDArray[np.uint8]:
     if frame is None:
         raise RuntimeError(f"Failed to decode captured JPEG from {url}")
     return frame
-
-
-def capture_frame_from_screen(region: tuple[int, int, int, int] | None = None) -> NDArray[np.uint8]:
-    """Grab a screenshot (full screen or region) via mss.
-
-    ``region`` is ``(left, top, width, height)`` or ``None`` for full primary
-    monitor.
-    """
-    import mss  # deferred import – only needed when called
-
-    with mss.mss() as sct:
-        if region:
-            monitor = {"left": region[0], "top": region[1], "width": region[2], "height": region[3]}
-        else:
-            monitor = sct.monitors[1]  # primary
-        shot = sct.grab(monitor)
-        frame = np.array(shot, dtype=np.uint8)
-        # mss returns BGRA; drop alpha
-        return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)

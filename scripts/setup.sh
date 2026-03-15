@@ -34,8 +34,6 @@ info "Checking prerequisites…"
 
 MISSING=()
 command -v python3 &>/dev/null || MISSING+=("python")
-command -v node    &>/dev/null || MISSING+=("nodejs")
-command -v npm     &>/dev/null || MISSING+=("npm")
 command -v ffmpeg  &>/dev/null || MISSING+=("ffmpeg")
 command -v git     &>/dev/null || MISSING+=("git")
 
@@ -71,7 +69,7 @@ fi
 ok "All prerequisites satisfied."
 
 # ── 2. Python virtual environment ──────────────────────────────
-info "[1/4] Setting up Python virtual environment…"
+info "[1/2] Setting up Python virtual environment…"
 if [[ ! -f "venv/bin/activate" ]]; then
     # Remove any leftover partial venv from a previous failed attempt
     rm -rf venv
@@ -93,29 +91,8 @@ pip install --upgrade pip
 pip install -e ".[dev]"
 ok "Python environment ready."
 
-# ── 3. Node dependencies ──────────────────────────────────────
-info "[2/4] Installing Node dependencies…"
-npm install
-ok "Node dependencies installed."
-
-# ── 4. NodeCG ──────────────────────────────────────────────────
-info "[3/4] Setting up NodeCG…"
-if [[ ! -f "nodecg/package.json" ]]; then
-    mkdir -p nodecg
-    # NodeCG 2.x has peer-dep conflicts with newer vite / @types/node;
-    # allow npm to resolve them with legacy algorithm.
-    echo "legacy-peer-deps=true" > nodecg/.npmrc
-    pushd nodecg >/dev/null
-    npx nodecg-cli setup
-    popd >/dev/null
-fi
-pushd nodecg >/dev/null
-npm install --legacy-peer-deps
-popd >/dev/null
-ok "NodeCG ready."
-
-# ── 5. Environment file ───────────────────────────────────────
-info "[4/4] Environment configuration…"
+# ── 3. Environment file ───────────────────────────────────────
+info "[2/2] Environment configuration…"
 if [[ ! -f ".env" ]]; then
     cp .env.example .env
     warn "Created .env from .env.example – edit it with your OBS WebSocket password."
@@ -123,7 +100,7 @@ else
     ok ".env already exists, skipping."
 fi
 
-# ── 6. Make scripts executable ─────────────────────────────────
+# ── 4. Make scripts executable ─────────────────────────────────
 chmod +x scripts/*.sh 2>/dev/null || true
 
 echo ""
@@ -133,11 +110,8 @@ cat <<'EOF'
 Next steps:
   1. Edit .env with your OBS WebSocket password
   2. Place template images (hearts.png etc.) in ./templates/
-  3. Start everything:    ./scripts/start.sh
-     Or individually:
-       Backend:  source venv/bin/activate && python -m src
-       NodeCG:   cd nodecg && node index.js
+  3. Start the server:    ./scripts/start.sh
+     Or manually:         source venv/bin/activate && python -m src
   4. Open dashboard:      http://localhost:8008/dashboard
-                          http://localhost:9090 (NodeCG)
 
 EOF

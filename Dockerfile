@@ -1,11 +1,12 @@
 FROM python:3.12-slim AS base
 
-# System deps: ffmpeg, streamlink, OpenCV support libs
+# System deps: ffmpeg, streamlink, OpenCV support libs, curl (health check)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         streamlink \
         libgl1 \
         libglib2.0-0 \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -27,12 +28,15 @@ ENV API_PORT=8008
 ENV OBS_WS_HOST=host.docker.internal
 ENV OBS_WS_PORT=4455
 ENV OBS_WS_PASSWORD=
-ENV INGEST_BASE_URL=udp://host.docker.internal
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8008/api/health || exit 1
 
 # ── Production stage ────────────────────────────────────────────
 FROM base AS production
 COPY src/ src/
 COPY scripts/ scripts/
+COPY templates/ templates/
 CMD ["python", "-m", "src"]
 
 # ── Development stage ───────────────────────────────────────────

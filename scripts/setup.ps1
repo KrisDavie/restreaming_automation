@@ -14,7 +14,6 @@ function Test-Command($cmd) {
 
 $missing = @()
 if (-not (Test-Command "python"))    { $missing += "Python 3.10+ (https://python.org)" }
-if (-not (Test-Command "node"))      { $missing += "Node.js 18+ (https://nodejs.org)" }
 if (-not (Test-Command "ffmpeg"))    { $missing += "FFmpeg (https://ffmpeg.org)" }
 if (-not (Test-Command "streamlink")){ $missing += "Streamlink (pip install streamlink)" }
 
@@ -28,7 +27,7 @@ if ($missing.Count -gt 0) {
 Write-Host "All prerequisites found." -ForegroundColor Green
 
 # ---- Python environment ----
-Write-Host "`n[1/4] Setting up Python virtual environment…" -ForegroundColor Cyan
+Write-Host "`n[1/2] Setting up Python virtual environment…" -ForegroundColor Cyan
 if (-not (Test-Path "venv")) {
     python -m venv venv
 }
@@ -36,21 +35,8 @@ if (-not (Test-Path "venv")) {
 pip install --upgrade pip
 pip install -e ".[dev]"
 
-# ---- Node dependencies ----
-Write-Host "`n[2/4] Installing Node dependencies…" -ForegroundColor Cyan
-npm install
-
-# ---- NodeCG ----
-Write-Host "`n[3/4] Setting up NodeCG…" -ForegroundColor Cyan
-if (-not (Test-Path "nodecg\package.json")) {
-    npx nodecg-cli setup ./nodecg
-}
-Push-Location nodecg
-npm install
-Pop-Location
-
 # ---- Env file ----
-Write-Host "`n[4/4] Environment configuration…" -ForegroundColor Cyan
+Write-Host "`n[2/2] Environment configuration…" -ForegroundColor Cyan
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
     Write-Host "Created .env from .env.example – edit it with your OBS WebSocket password." -ForegroundColor Yellow
@@ -64,8 +50,7 @@ Write-Host @"
 Next steps:
   1. Edit .env with your OBS WebSocket password
   2. Place template images (hearts.png etc.) in ./templates/
-  3. Start the backend:   python -m src
-  4. Start NodeCG:        cd nodecg && node index.js
-  5. Open dashboard:      http://localhost:9090
+  3. Start the server:    .\scripts\start.ps1
+  4. Open dashboard:      http://localhost:8008/dashboard
 
 "@ -ForegroundColor White

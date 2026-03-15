@@ -30,6 +30,8 @@ Desktop.ini
 *.swo
 
 # Project
+data/
+!data/.gitkeep
 logs/
 screenshots/
 *.log
