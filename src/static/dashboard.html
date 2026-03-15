@@ -179,12 +179,51 @@
                     </div>
                     <div id="mixerStrips" style="margin-bottom:10px"></div>
                     <hr style="border-color:var(--border);margin:10px 0">
-                    <div style="font-size:13px;font-weight:600;margin-bottom:6px">🎙️ Discord / Commentary</div>
-                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                    <div style="font-size:13px;font-weight:600;margin-bottom:6px">🖥️ Discord Screen Share</div>
+                    <div style="font-size:11px;color:var(--text2);margin-bottom:6px">
+                        Opens an OBS projector window you can share to Discord.
+                    </div>
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+                        <select id="projectorRes" style="min-width:140px">
+                            <option value="0x0">Loading…</option>
+                        </select>
+                        <button class="bp btn-sm" onclick="openProjector()">📺 Open Projector</button>
+                    </div>
+                    <hr style="border-color:var(--border);margin:10px 0">
+                    <div style="font-size:13px;font-weight:600;margin-bottom:6px">🎙️ Commentary Audio Capture</div>
+                    <div id="audioCaptureDesc" style="font-size:11px;color:var(--text2);margin-bottom:6px">
+                        Captures Discord/commentary audio into OBS.
+                    </div>
+                    <!-- Application Audio Capture (Windows) -->
+                    <div id="appCaptureRow" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+                        <input id="appCaptureName" class="inline-input" style="flex:1;min-width:140px" value="Discord.exe" placeholder="e.g. Discord.exe">
+                        <button class="bt btn-sm" onclick="addDiscord()">Add Source</button>
+                    </div>
+                    <!-- Device Capture (Linux / macOS / fallback) -->
+                    <div id="deviceCaptureRow" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
                         <select id="discordDevice" style="flex:1;min-width:120px"><option value="default">Default</option></select>
                         <button class="bt btn-sm" onclick="addDiscord()">Add Source</button>
                         <button class="bb btn-sm" onclick="fetchDevices()">Scan Devices</button>
                     </div>
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        <select id="monitorSelect" style="min-width:160px">
+                            <option value="OBS_MONITORING_TYPE_MONITOR_ONLY">Monitor Only (mute output)</option>
+                            <option value="OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT">Monitor &amp; Output</option>
+                            <option value="OBS_MONITORING_TYPE_NONE">Off</option>
+                        </select>
+                        <input id="monitorInputName" class="inline-input" style="width:120px!important" placeholder="Commentary" value="Commentary">
+                        <button class="by btn-sm" onclick="setMonitorType()">Set Monitoring</button>
+                    </div>
+                    <hr style="border-color:var(--border);margin:10px 0">
+                    <details style="font-size:11px;color:var(--text2)">
+                        <summary style="cursor:pointer;font-weight:600;color:var(--text);font-size:12px;margin-bottom:4px">📖 Discord Sharing Guide</summary>
+                        <ol style="padding-left:16px;line-height:1.8">
+                            <li>Click <b>Open Projector</b> above — OBS opens a resizable window showing your scene.</li>
+                            <li>In Discord, join a voice channel and click <b>Screen → Window</b>, then pick the OBS projector window.</li>
+                            <li>To capture Discord audio into OBS: click <b>Scan Devices</b>, select the audio output device Discord uses, then <b>Add Source</b>.</li>
+                            <li>Set monitoring to <b>Monitor Only (mute output)</b> so commentary goes into OBS but doesn't echo back.</li>
+                        </ol>
+                    </details>
                     <div class="log" id="aLog"></div>
                 </div>
             </div>
@@ -545,7 +584,7 @@ wsConnect();
 function handleEvent(ev, d) {
     if (ev==='ingest:started') setDot(d.slot, true);
     if (ev==='ingest:stopped') setDot(d.slot, false);
-    if (ev==='obs:connected')  { $('#obsDot').className='dot on'; loadSc(); }
+    if (ev==='obs:connected')  { $('#obsDot').className='dot on'; loadSc(); populateProjectorRes(); apiGet('/api/obs/status').then(s => updateAudioCaptureUI(s.platform)).catch(()=>{}); }
     if (ev==='obs:disconnected') $('#obsDot').className='dot off';
     if (ev==='audio:switched') updateAudioUI(d.active_slot);
     if (ev==='audio:volume' || ev==='audio:mute') refreshMixer();
@@ -921,6 +960,13 @@ function updateCoordsBar() {
 }
 
 async function applyAllCrops() {
+    // Re-apply active template positioning first (template sets bounds, crop is applied within)
+    if (tplId) {
+        try {
+            await apiPost(`/api/templates/${tplId}/apply`, {});
+            logMsg($('#cLog'), 'Re-applied template positioning before crops');
+        } catch(e) { /* template apply is best-effort */ }
+    }
     const regions = cropRegions[cropSlot];
     let applied = 0;
     for (const [mode, rect] of Object.entries(regions)) {
@@ -1098,16 +1144,92 @@ async function fetchDevices() {
     } catch(e) { logMsg($('#aLog'), `Device scan error: ${e.message}`); }
 }
 
+let _obsPlatform = '';
+
+function updateAudioCaptureUI(platform) {
+    _obsPlatform = platform || '';
+    const appRow = document.getElementById('appCaptureRow');
+    const devRow = document.getElementById('deviceCaptureRow');
+    const desc = document.getElementById('audioCaptureDesc');
+    if (_obsPlatform === 'windows') {
+        appRow.style.display = 'flex';
+        devRow.style.display = 'none';
+        desc.textContent = 'Application Audio Capture — captures only Discord audio (Windows).';
+    } else {
+        appRow.style.display = 'none';
+        devRow.style.display = 'flex';
+        desc.textContent = 'Captures Discord/commentary audio into OBS. Select the audio device Discord outputs to.';
+    }
+}
+
 async function addDiscord() {
-    const sel = document.getElementById('discordDevice');
-    const deviceId = sel ? sel.value : 'default';
+    const body = {};
+    if (_obsPlatform === 'windows') {
+        const appName = document.getElementById('appCaptureName')?.value || 'Discord.exe';
+        body.window = appName;
+    } else {
+        const sel = document.getElementById('discordDevice');
+        body.device_id = sel ? sel.value : 'default';
+    }
     try {
-        const r = await apiPost('/api/obs/audio/discord', { device_id: deviceId });
+        const r = await apiPost('/api/obs/audio/discord', body);
         if (r.status === 'ok') {
-            logMsg($('#aLog'), `Commentary source created (device: ${deviceId})`);
+            const detail = body.window ? `app: ${body.window}` : `device: ${body.device_id}`;
+            logMsg($('#aLog'), `Commentary source created (${detail})`);
             setTimeout(refreshMixer, 500);
-        } else logMsg($('#aLog'), `Discord error: ${r.error}`);
-    } catch(e) { logMsg($('#aLog'), `Discord error: ${e.message}`); }
+        } else logMsg($('#aLog'), `Audio error: ${r.error}`);
+    } catch(e) { logMsg($('#aLog'), `Audio error: ${e.message}`); }
+}
+
+async function populateProjectorRes() {
+    const sel = document.getElementById('projectorRes');
+    if (!sel) return;
+    let bw = 1920, bh = 1080;
+    try {
+        const vs = await apiGet('/api/obs/video-settings');
+        if (vs.status === 'ok') { bw = vs.baseWidth; bh = vs.baseHeight; }
+    } catch {}
+    const scales = [
+        { label: '100%', factor: 1.0 },
+        { label: '75%',  factor: 0.75 },
+        { label: '50%',  factor: 0.5 },
+        { label: '33%',  factor: 1/3 },
+    ];
+    sel.innerHTML = '';
+    for (const s of scales) {
+        const w = Math.round(bw * s.factor);
+        const h = Math.round(bh * s.factor);
+        const opt = document.createElement('option');
+        opt.value = `${w}x${h}`;
+        opt.textContent = `${w}×${h} (${s.label})`;
+        if (s.factor === 0.50) opt.selected = true;
+        sel.appendChild(opt);
+    }
+    const def = document.createElement('option');
+    def.value = '0x0';
+    def.textContent = 'OBS Default';
+    sel.appendChild(def);
+}
+
+async function openProjector() {
+    const sel = document.getElementById('projectorRes');
+    const [w, h] = (sel ? sel.value : '0x0').split('x').map(Number);
+    try {
+        // + 44px for OBS projector window title bar – not sure if this is consistent across platforms but it’s a minor difference either way
+        const r = await apiPost('/api/obs/projector', { scene_name: 'Race Scene', monitor: -1, width: w, height: h + 44 });
+        if (r.status === 'ok') logMsg($('#aLog'), `Projector opened${w ? ` (${w}×${h})` : ''} — share this in Discord`);
+        else logMsg($('#aLog'), `Projector error: ${r.error}`);
+    } catch(e) { logMsg($('#aLog'), `Projector error: ${e.message}`); }
+}
+
+async function setMonitorType() {
+    const inputName = document.getElementById('monitorInputName')?.value || 'Commentary';
+    const monitorType = document.getElementById('monitorSelect')?.value || 'OBS_MONITORING_TYPE_MONITOR_ONLY';
+    try {
+        const r = await apiPost('/api/obs/audio/monitor', { input_name: inputName, monitor_type: monitorType });
+        if (r.status === 'ok') logMsg($('#aLog'), `Monitoring set to ${monitorType.replace('OBS_MONITORING_TYPE_', '')} for ${inputName}`);
+        else logMsg($('#aLog'), `Monitor error: ${r.error}`);
+    } catch(e) { logMsg($('#aLog'), `Monitor error: ${e.message}`); }
 }
 
 /* ================================================================
@@ -1155,7 +1277,11 @@ async function resetSync() {
    OBS
    ================================================================ */
 async function obsConn() {
-    try { await apiPost('/api/obs/connect'); $('#obsDot').className = 'dot on'; logMsg($('#oLog'), 'Connected'); loadSc(); }
+    try {
+        await apiPost('/api/obs/connect');
+        $('#obsDot').className = 'dot on'; logMsg($('#oLog'), 'Connected'); loadSc(); populateProjectorRes();
+        const st = await apiGet('/api/obs/status'); updateAudioCaptureUI(st.platform);
+    }
     catch(e) { logMsg($('#oLog'), e.message); }
 }
 async function obsDisc() {
@@ -1389,6 +1515,12 @@ async function refreshTemplates() {
             o.value = t.id; o.textContent = `${t.name} (${(t.created_at||'').split('.')[0]})`;
             sel.appendChild(o);
         });
+        // Restore last-used template from server
+        const at = await apiGet('/api/active-template');
+        if (at.template_id) {
+            sel.value = String(at.template_id);
+            if (sel.value) loadTemplate();
+        }
     } catch(e) { logMsg($('#tLog'), `Error: ${e.message}`); }
 }
 
@@ -1768,7 +1900,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (at.template_id && at.num_slots) setNumSlots(at.num_slots);
     } catch {}
 
-    try { const r = await apiGet('/api/obs/status'); if (r.connected) { $('#obsDot').className = 'dot on'; loadSc(); } } catch {}
+    try { const r = await apiGet('/api/obs/status'); if (r.connected) { $('#obsDot').className = 'dot on'; loadSc(); populateProjectorRes(); updateAudioCaptureUI(r.platform); } } catch {}
     try {
         const r = await apiGet('/api/ingest/status');
         for (const [s, i] of Object.entries(r.feeds||{})) {

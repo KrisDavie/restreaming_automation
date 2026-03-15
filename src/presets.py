@@ -69,6 +69,12 @@ class PresetStore:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
         self._conn.commit()
 
     def _row_to_preset(self, row: sqlite3.Row) -> CropPreset:
@@ -186,6 +192,21 @@ class PresetStore:
         cur = self._conn.execute("DELETE FROM templates WHERE id = ?", (template_id,))
         self._conn.commit()
         return cur.rowcount > 0
+
+    # ---- Settings (key-value) ----
+
+    def get_setting(self, key: str, default: str | None = None) -> str | None:
+        row = self._conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ).fetchone()
+        return row["value"] if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+        self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()

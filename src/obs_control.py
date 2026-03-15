@@ -1,7 +1,7 @@
 """Control Layer – OBS WebSocket client for remote scene/source manipulation.
 
-Wraps the obs-websocket-py library (v5 protocol) behind a clean async API
-used by the rest of the system to:
+Async client for the OBS WebSocket v5 protocol (using the ``websockets``
+library) behind a clean async API used by the rest of the system to:
   • Set crop filters on sources
   • Adjust sync offsets (network buffer)
   • Switch scenes
@@ -12,8 +12,12 @@ used by the rest of the system to:
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import logging
+import re
+import struct
 from dataclasses import dataclass
 from typing import Any
 
@@ -87,13 +91,12 @@ class OBSController:
                     "OBS requires authentication but OBS_WS_PASSWORD is not set. "
                     "Set it in your .env file or environment."
                 )
-            import hashlib, base64 as b64mod
-            secret = b64mod.b64encode(
+            secret = base64.b64encode(
                 hashlib.sha256(
                     (password + auth["salt"]).encode()
                 ).digest()
             ).decode()
-            auth_response = b64mod.b64encode(
+            auth_response = base64.b64encode(
                 hashlib.sha256(
                     (secret + auth["challenge"]).encode()
                 ).digest()
@@ -139,6 +142,11 @@ class OBSController:
     def connected(self) -> bool:
         return self._connected
 
+    @property
+    def platform(self) -> str:
+        """Return the detected OBS host platform ('windows', 'macos', 'linux')."""
+        return self._obs_platform
+
     # ------------------------------------------------------------------
     # Scene-item helpers (single-input, multi-item architecture)
     # ------------------------------------------------------------------
@@ -177,8 +185,7 @@ class OBSController:
     @staticmethod
     def _input_name_for(logical_name: str) -> str:
         """Translate a logical name (Racer1_Game) to the real OBS input (Racer1_Feed)."""
-        import re as _re
-        m = _re.match(r'^(Racer\d+)_(Game|Tracker|Timer)$', logical_name)
+        m = re.match(r'^(Racer\d+)_(Game|Tracker|Timer)$', logical_name)
         if m:
             return f"{m.group(1)}_Feed"
         return logical_name
@@ -225,14 +232,12 @@ class OBSController:
         standalone ``ffmpeg_source`` inputs) that conflict with the new
         single-Feed architecture.
         """
-        import re as _re
-
         # --- Remove legacy separate-input sources that are actual inputs ---
         try:
             input_resp = await self.request("GetInputList", {})
             for inp in input_resp.get("inputs", []):
                 name = inp.get("inputName", "")
-                if _re.match(r'^Racer\d+_(Game|Tracker|Timer)$', name):
+                if re.match(r'^Racer\d+_(Game|Tracker|Timer)$', name):
                     try:
                         resp = await self.request("RemoveInput", {"inputName": name})
                         log.info("Removed legacy input '%s' → resp=%s", name, resp)
@@ -250,7 +255,7 @@ class OBSController:
         feeds: dict[str, list[int]] = {}
         for item in resp.get("sceneItems", []):
             name = item.get("sourceName", "")
-            if _re.match(r'^Racer\d+_Feed$', name):
+            if re.match(r'^Racer\d+_Feed$', name):
                 feeds.setdefault(name, []).append(item["sceneItemId"])
         # Assign logical names
         suffixes = ["Game", "Tracker", "Timer"]
@@ -444,7 +449,7 @@ class OBSController:
             "mul": resp.get("inputVolumeMul", 1.0),
         }
 
-    def _audio_capture_kind(self) -> str:
+    def audio_capture_kind(self) -> str:
         """Return the OBS input kind for audio output capture on the current platform."""
         if self._obs_platform == "windows":
             return "wasapi_output_capture"
@@ -453,15 +458,21 @@ class OBSController:
         return "pulse_output_capture"
 
     async def create_audio_capture(self, scene_name: str, source_name: str,
-                                   device_id: str = "default") -> None:
-        """Create or update an audio output capture source.
+                                   device_id: str = "default",
+                                   window: str = "") -> None:
+        """Create or update an audio capture source.
 
-        Useful for capturing Discord or other desktop audio.
-        Automatically selects the correct source kind for the OBS host
-        platform (WASAPI on Windows, CoreAudio on macOS, PulseAudio on Linux).
+        If *window* is provided **and** the OBS host is Windows, an
+        Application Audio Capture source (``wasapi_process_output_capture``)
+        is created that captures only the named application's audio.
+        Otherwise falls back to the platform-appropriate device capture.
         """
-        settings: dict[str, Any] = {"device_id": device_id}
-        kind = self._audio_capture_kind()
+        if window and self._obs_platform == "windows":
+            kind = "wasapi_process_output_capture"
+            settings: dict[str, Any] = {"window": window}
+        else:
+            kind = self.audio_capture_kind()
+            settings = {"device_id": device_id}
         try:
             await self.request("GetInputSettings", {"inputName": source_name})
             await self.request("SetInputSettings", {
@@ -476,7 +487,8 @@ class OBSController:
                 "inputSettings": settings,
                 "sceneItemEnabled": True,
             })
-        log.info("Audio capture '%s' (%s) → device '%s'", source_name, kind, device_id)
+        log.info("Audio capture '%s' (%s) → %s", source_name, kind,
+                 window if window else f"device '{device_id}'")
 
     async def list_audio_inputs(self) -> list[dict[str, Any]]:
         """Return info for all OBS inputs that produce audio."""
@@ -871,6 +883,67 @@ class OBSController:
 
         return applied
 
+    @staticmethod
+    def _make_qt_geometry(x: int, y: int, w: int, h: int) -> str:
+        """Build a base64-encoded Qt5 window-geometry blob.
+
+        Compatible with ``QWidget::restoreGeometry()`` which OBS uses
+        to position the projector window.
+        """
+        magic = 0x01D9D0CB
+        major, minor = 2, 0
+        # QDataStream (Qt_4_0, big-endian) serialises QRect as (left, top, width, height)
+        data = struct.pack(
+            ">I HH iiii iiii i BB",
+            magic, major, minor,
+            x, y, w, h,       # frame geometry
+            x, y, w, h,       # normal geometry
+            0,                 # screen number
+            0, 0,              # maximised, fullscreen
+        )
+        return base64.b64encode(data).decode()
+
+    async def get_video_settings(self) -> dict[str, Any]:
+        """Return OBS video settings (base/output resolution, FPS)."""
+        resp = await self.request("GetVideoSettings", {})
+        return resp
+
+    async def open_projector(
+        self, scene_name: str, monitor: int = -1,
+        width: int = 0, height: int = 0,
+    ) -> None:
+        """Open a windowed projector for *scene_name*.
+
+        *monitor* = -1 → windowed projector (user can move/resize).
+        A positive value opens full-screen on that monitor index.
+        *width*/*height* — if both > 0, set the projector window size.
+        """
+        req: dict[str, Any] = {
+            "sourceName": scene_name,
+            "monitorIndex": monitor,
+        }
+        if width > 0 and height > 0:
+            # Centre on screen (offset 100,100 as reasonable default)
+            req["projectorGeometry"] = self._make_qt_geometry(100, 100, width, height)
+        await self.request("OpenSourceProjector", req)
+        log.info("Opened projector for scene '%s' (%dx%d)", scene_name, width, height)
+
+    async def set_audio_monitor_type(
+        self, input_name: str, monitor_type: str = "OBS_MONITORING_TYPE_MONITOR_ONLY",
+    ) -> None:
+        """Set the audio monitoring type for an input.
+
+        Types:
+            OBS_MONITORING_TYPE_NONE          – no monitoring
+            OBS_MONITORING_TYPE_MONITOR_ONLY  – monitoring only (muted in stream)
+            OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT – both
+        """
+        await self.request("SetInputAudioMonitorType", {
+            "inputName": input_name,
+            "monitorType": monitor_type,
+        })
+        log.info("Audio monitor for '%s' set to %s", input_name, monitor_type)
+
     async def get_scene_screenshot(
         self, scene_name: str, width: int = 1280, height: int = 720,
         fmt: str = "jpg", quality: int = 75,
@@ -908,7 +981,7 @@ class OBSController:
                 "requestData": request_data,
             },
         }
-        future: asyncio.Future[dict[str, Any]] = asyncio.get_event_loop().create_future()
+        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
         self._pending[rid] = future
         await self._send(msg)
         result = await asyncio.wait_for(future, timeout=10)

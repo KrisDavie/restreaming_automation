@@ -41,7 +41,6 @@ from typing import Any
 logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s:  %(name)s  %(message)s",
-    force=True,
 )
 
 import cv2
@@ -117,7 +116,18 @@ class AudioMuteRequest(BaseModel):
     muted: bool
 
 class DiscordSourceRequest(BaseModel):
-    device_id: str = "default"  # PulseAudio device ID
+    device_id: str = "default"  # audio device ID
+    window: str = ""             # Windows-only: app window match string for Application Audio Capture
+
+class ProjectorRequest(BaseModel):
+    scene_name: str = "Race Scene"
+    monitor: int = -1  # -1 = windowed, 0+ = fullscreen on that monitor
+    width: int = 0     # projector window width  (0 = OBS default)
+    height: int = 0    # projector window height (0 = OBS default)
+
+class AudioMonitorRequest(BaseModel):
+    input_name: str
+    monitor_type: str = "OBS_MONITORING_TYPE_MONITOR_ONLY"
 
 class DetectResponse(BaseModel):
     success: bool
@@ -210,7 +220,7 @@ async def _provision_running_feeds() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
-    global config, ingest, obs, detector, presets
+    global config, ingest, obs, detector, presets, _active_template_id
     config = load_config()
     ingest = IngestManager(config)
     obs = OBSController(config)
@@ -218,6 +228,17 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     _TEMPLATES_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     templates = TemplateStore(config.templates_dir)
     detector = GameDetector(templates, confidence_threshold=config.detect_confidence)
+
+    # Restore persisted active template
+    saved_tpl = presets.get_setting("active_template_id")
+    if saved_tpl is not None:
+        try:
+            _active_template_id = int(saved_tpl)
+            presets.get_template(_active_template_id)  # verify it still exists
+            log.info("Restored active template: %d", _active_template_id)
+        except (ValueError, KeyError):
+            _active_template_id = None
+
     log.info("Restreaming Automation API ready  (OBS target: %s)", config.obs_ws_url)
 
     # Try auto-connecting to OBS at startup
@@ -249,6 +270,16 @@ app.add_middleware(
 # Serve the standalone dashboard at /dashboard
 if _STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+@app.get("/api/health")
+async def health_check() -> dict[str, Any]:
+    """Lightweight health endpoint for Docker HEALTHCHECK and monitoring."""
+    return {
+        "status": "ok",
+        "obs_connected": obs.connected,
+        "active_feeds": len(ingest._feeds),
+    }
 
 
 @app.get("/dashboard")
@@ -507,7 +538,10 @@ async def obs_disconnect() -> dict[str, str]:
 
 @app.get("/api/obs/status")
 async def obs_status() -> dict[str, Any]:
-    return {"connected": obs.connected}
+    resp: dict[str, Any] = {"connected": obs.connected}
+    if obs.connected:
+        resp["platform"] = obs.platform
+    return resp
 
 
 @app.post("/api/obs/init")
@@ -649,8 +683,50 @@ async def obs_audio_discord(req: DiscordSourceRequest) -> dict[str, Any]:
     if not obs.connected:
         return {"status": "error", "error": "OBS not connected"}
     try:
-        await obs.create_audio_capture(RACE_SCENE, "Commentary", req.device_id)
+        await obs.create_audio_capture(RACE_SCENE, "Commentary", req.device_id, window=req.window)
         return {"status": "ok", "source": "Commentary"}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+@app.get("/api/obs/video-settings")
+async def obs_video_settings() -> dict[str, Any]:
+    """Return the OBS canvas (base) resolution so the UI can offer scaled options."""
+    if not obs.connected:
+        return {"status": "error", "error": "OBS not connected"}
+    try:
+        vs = await obs.get_video_settings()
+        return {
+            "status": "ok",
+            "baseWidth": vs.get("baseWidth", 1920),
+            "baseHeight": vs.get("baseHeight", 1080),
+            "outputWidth": vs.get("outputWidth", 1920),
+            "outputHeight": vs.get("outputHeight", 1080),
+        }
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+@app.post("/api/obs/projector")
+async def obs_projector(req: ProjectorRequest) -> dict[str, Any]:
+    """Open a windowed or fullscreen projector for a scene."""
+    if not obs.connected:
+        return {"status": "error", "error": "OBS not connected"}
+    try:
+        await obs.open_projector(req.scene_name, req.monitor, req.width, req.height)
+        return {"status": "ok"}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+@app.post("/api/obs/audio/monitor")
+async def obs_audio_monitor(req: AudioMonitorRequest) -> dict[str, Any]:
+    """Set monitoring type for an audio source (e.g. Monitor Only)."""
+    if not obs.connected:
+        return {"status": "error", "error": "OBS not connected"}
+    try:
+        await obs.set_audio_monitor_type(req.input_name, req.monitor_type)
+        return {"status": "ok"}
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
 
@@ -666,7 +742,7 @@ async def obs_audio_devices() -> dict[str, Any]:
     if not obs.connected:
         return {"status": "error", "error": "OBS not connected", "devices": []}
     probe_name = "_device_probe_tmp"
-    kind = obs._audio_capture_kind()
+    kind = obs.audio_capture_kind()
     try:
         # Create a hidden temporary source so we can list its device options
         try:
@@ -907,6 +983,7 @@ async def apply_template_to_obs(
         scene, img_path, slot_regions, text_entries,
     )
     _active_template_id = template_id
+    presets.set_setting("active_template_id", str(template_id))
     await broadcast("template:applied", {
         "template_id": template_id,
         "template_name": tpl.get("name", ""),
