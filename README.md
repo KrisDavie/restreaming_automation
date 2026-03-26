@@ -10,7 +10,6 @@ A **headless production stack** for automating ALttP community race restreams. R
 │  YouTube    │───>│  (FastAPI)   │<──>│  Studio   │
 │  streams    │    │              │    │  (host)   │
 └─────────────┘    │  • Ingest    │    └─────┬─────┘
-                   │  • Detection │          │
                    │  • OBS ctrl  │──────────┘
                    │  :8008       │  OBS-WebSocket :4455
                    └──────────────┘
@@ -19,7 +18,6 @@ A **headless production stack** for automating ALttP community race restreams. R
 | Layer | Technology | Purpose |
 |---|---|---|
 | **Ingest** | Streamlink + FFmpeg | Pipe live streams to local UDP/SRT ports |
-| **Detection** | Python + OpenCV | Auto-detect game regions via template matching |
 | **Control** | FastAPI + HTML dashboard | Web UI for cropping, sync, scene control, templates |
 | **OBS Link** | OBS WebSocket v5 (async) | Remote scene/source manipulation via raw websockets |
 | **Compositing** | OBS Studio | Assemble and encode the final broadcast |
@@ -85,14 +83,12 @@ restreaming_automation/
 │   ├── __main__.py               # Entry point (python -m src)
 │   ├── config.py                 # Environment configuration
 │   ├── ingest.py                 # Streamlink/FFmpeg pipeline manager
-│   ├── detector.py               # OpenCV auto-crop detection
 │   ├── obs_control.py            # OBS WebSocket v5 client (async, raw websockets)
 │   ├── presets.py                # SQLite-backed preset/template storage
 │   ├── server.py                 # FastAPI REST + WebSocket API
 │   └── static/
 │       └── dashboard.html        # Single-page control dashboard
 ├── data/                         # SQLite DB + template uploads (auto-created)
-├── templates/                    # Template images for detection
 ├── scripts/
 │   ├── setup.ps1 / setup.sh      # One-time setup
 │   ├── start.ps1 / start.sh      # Start API server
@@ -116,12 +112,13 @@ restreaming_automation/
 | GET | `/api/ingest/status` | List all active feeds |
 | GET | `/api/ingest/qualities?url=` | Query available stream qualities |
 | GET | `/api/ingest/preview/{slot}` | Capture a JPEG preview frame |
+| GET | `/api/ingest/token` | Check if Twitch OAuth token is set |
+| POST | `/api/ingest/token` | Set/clear Twitch OAuth token |
 
-### Detection
+### Crop
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/detect/{slot}` | Run auto-crop on a slot's feed |
 | POST | `/api/detect/manual` | Submit manual crop coordinates |
 
 ### OBS Control
@@ -182,7 +179,10 @@ Connect to `ws://localhost:8008/ws` for real-time events:
 
 ```json
 { "event": "ingest:started", "data": { "slot": 0, "url": "...", "local_url": "..." } }
-{ "event": "detect:applied", "data": { "slot": 0, "crop": { ... } } }
+{ "event": "ingest:stopped", "data": { "slot": 0 } }
+{ "event": "ingest:reconnecting", "data": { "slot": 0, "attempt": 1, "delay": 3 } }
+{ "event": "ingest:reconnected", "data": { "slot": 0, "attempt": 1, "url": "...", "local_url": "..." } }
+{ "event": "ingest:reconnect_failed", "data": { "slot": 0, "attempts": 10 } }
 { "event": "template:applied", "data": { "template_id": 1, "template_name": "2-player", "applied": [...] } }
 ```
 
@@ -191,7 +191,7 @@ Connect to `ws://localhost:8008/ws` for real-time events:
 1. **Input URLs** → Enter racer Twitch URLs in the Ingest panel
 2. **Start Feeds** → Dashboard triggers Streamlink pipelines
 3. **Apply Template** → Select a layout template to position sources
-4. **Auto-Detect** → Click "Auto-Detect Crop" – OpenCV finds the game window
+4. **Crop Feeds** → Drag-to-crop on the preview to isolate game/tracker regions
 5. **Sync Streams** → Nudge offsets with ±buttons until audio/video aligns
 6. **Share to Discord** → Open Projector, screen-share the window in Discord
 7. **Go Live** → Hit "Start Streaming" from the OBS panel

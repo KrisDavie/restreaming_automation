@@ -8,8 +8,7 @@ version = "0.1.0"
 description = "Headless production stack for ALttP restreaming automation"
 requires-python = ">=3.10"
 dependencies = [
-    "opencv-python>=4.9.0",
-    "numpy>=1.26.0",
+    "Pillow>=10.0.0",
     "websockets>=12.0",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",

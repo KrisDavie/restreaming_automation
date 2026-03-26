@@ -28,12 +28,9 @@ class Config:
     api_host: str = field(default_factory=lambda: _env("API_HOST", "0.0.0.0"))
     api_port: int = field(default_factory=lambda: int(_env("API_PORT", "8008")))
 
-    # Detection
-    detect_confidence: float = field(
-        default_factory=lambda: float(_env("DETECT_CONFIDENCE", "0.75"))
-    )
-    templates_dir: Path = field(
-        default_factory=lambda: Path(_env("TEMPLATES_DIR", str(_ROOT / "templates")))
+    # Twitch OAuth token (bypasses ads via authenticated streamlink sessions)
+    twitch_oauth_token: str = field(
+        default_factory=lambda: _env("TWITCH_OAUTH_TOKEN", "")
     )
 
     # Host-accessible data directory (for OBS running outside Docker)
