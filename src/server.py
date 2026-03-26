@@ -7,8 +7,7 @@ Ingest:
     POST   /api/ingest/stop        – stop a feed
     GET    /api/ingest/status      – list active feeds
 
-Detection:
-    POST   /api/detect/{slot}      – run auto-crop on a slot's feed
+Crop:
     POST   /api/detect/manual      – submit manual crop coordinates
 
 OBS:
@@ -33,7 +32,10 @@ import asyncio
 import base64
 import logging
 import shutil
+import subprocess
+import sys
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -43,20 +45,15 @@ logging.basicConfig(
     format="%(levelname)s:  %(name)s  %(message)s",
 )
 
-import cv2
-import numpy as np
-from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
+from io import BytesIO
+
+from PIL import Image
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import Config, load_config
-from .detector import (
-    CropRect,
-    GameDetector,
-    TemplateStore,
-    capture_frame_from_url,
-)
 from .ingest import IngestManager
 from .obs_control import OBSController, SourceCrop
 from .presets import PresetStore
@@ -66,6 +63,31 @@ _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _TEMPLATES_UPLOAD_DIR = _DATA_DIR / "template_images"
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Data types
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CropRect:
+    """Pixel-level crop rectangle (top-left origin)."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+    def to_dict(self) -> dict[str, int]:
+        return {"x": self.x, "y": self.y, "width": self.width, "height": self.height}
+
+    def to_obs_crop(self, source_w: int, source_h: int) -> dict[str, int]:
+        """Convert to OBS Crop/Pad filter values (top/bottom/left/right)."""
+        return {
+            "left": self.x,
+            "top": self.y,
+            "right": max(0, source_w - (self.x + self.width)),
+            "bottom": max(0, source_h - (self.y + self.height)),
+        }
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -129,14 +151,6 @@ class AudioMonitorRequest(BaseModel):
     input_name: str
     monitor_type: str = "OBS_MONITORING_TYPE_MONITOR_ONLY"
 
-class DetectResponse(BaseModel):
-    success: bool
-    confidence: float = 0.0
-    game_crop: dict[str, int] | None = None
-    tracker_crop: dict[str, int] | None = None
-    preview_b64: str | None = None  # base64-encoded JPEG debug image
-
-
 class PresetSaveRequest(BaseModel):
     channel: str
     name: str
@@ -170,7 +184,6 @@ class TextSourceRequest(BaseModel):
 config: Config
 ingest: IngestManager
 obs: OBSController
-detector: GameDetector
 presets: PresetStore
 
 RACE_SCENE = "Race Scene"  # Default OBS scene used for auto-setup
@@ -218,16 +231,19 @@ async def _provision_running_feeds() -> None:
                 log.warning("Retroactive provision failed for slot %d: %s", slot, exc)
 
 
+async def _ingest_event_handler(event: str, data: Any) -> None:
+    """Forward ingest-layer events to all dashboard WebSocket clients."""
+    await broadcast(event, data)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
-    global config, ingest, obs, detector, presets, _active_template_id
+    global config, ingest, obs, presets, _active_template_id
     config = load_config()
-    ingest = IngestManager(config)
+    ingest = IngestManager(config, on_event=_ingest_event_handler)
     obs = OBSController(config)
     presets = PresetStore()
     _TEMPLATES_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    templates = TemplateStore(config.templates_dir)
-    detector = GameDetector(templates, confidence_threshold=config.detect_confidence)
 
     # Restore persisted active template
     saved_tpl = presets.get_setting("active_template_id")
@@ -404,6 +420,23 @@ async def ingest_stop(req: IngestStopRequest) -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/api/ingest/reconnect")
+async def ingest_reconnect(req: IngestStopRequest) -> dict[str, Any]:
+    """Reconnect (restart) the feed on the given slot using its existing settings."""
+    feed = ingest.get_feed(req.slot)
+    if feed is None:
+        raise HTTPException(status_code=404, detail=f"No feed running on slot {req.slot}")
+    url, quality, offset = feed.url, feed.quality, str(feed.start_offset)
+    await ingest.stop_feed(req.slot)
+    await broadcast("ingest:stopped", {"slot": req.slot})
+    new_feed = await ingest.start_feed(req.slot, url, quality, offset)
+    await broadcast("ingest:started", {
+        "slot": new_feed.slot, "url": new_feed.url,
+        "local_url": new_feed.obs_input_url,
+    })
+    return {"status": "ok", "local_url": new_feed.obs_input_url}
+
+
 @app.get("/api/ingest/status")
 async def ingest_status() -> dict[str, Any]:
     feeds_info = {}
@@ -416,6 +449,26 @@ async def ingest_status() -> dict[str, Any]:
             "running": feed.process is not None and feed.process.returncode is None,
         }
     return {"feeds": feeds_info}
+
+
+@app.get("/api/ingest/token")
+async def get_twitch_token() -> dict[str, Any]:
+    """Check whether a Twitch OAuth token is configured (does not reveal the token)."""
+    return {"has_token": bool(ingest.twitch_token)}
+
+
+@app.post("/api/ingest/token")
+async def set_twitch_token(body: dict[str, Any]) -> dict[str, str]:
+    """Set or clear the Twitch OAuth token used by streamlink.
+
+    Body: ``{ "token": "<oauth_token>" }``  (empty string to clear).
+    Takes effect on the next feed start or reconnect.
+    """
+    token = str(body.get("token", "")).strip()
+    ingest.twitch_token = token
+    state = "set" if token else "cleared"
+    log.info("Twitch OAuth token %s", state)
+    return {"status": "ok", "token_state": state}
 
 
 @app.get("/api/ingest/preview/{slot}")
@@ -436,13 +489,11 @@ async def ingest_preview(slot: int) -> dict[str, Any]:
 
     try:
         raw = await asyncio.to_thread(snapshot.read_bytes)
-        arr = np.frombuffer(raw, dtype=np.uint8)
-        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        if frame is None:
-            return {"success": False, "error": "Failed to decode snapshot JPEG"}
-        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        b64 = base64.b64encode(buf.tobytes()).decode()
-        h, w = frame.shape[:2]
+        img = Image.open(BytesIO(raw))
+        w, h = img.size
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=80)
+        b64 = base64.b64encode(buf.getvalue()).decode()
         return {"success": True, "image_b64": b64, "width": w, "height": h}
     except Exception as exc:
         log.warning("Preview read failed for slot %d: %s", slot, exc)
@@ -450,11 +501,8 @@ async def ingest_preview(slot: int) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Detection endpoints
+# Crop endpoints
 # ---------------------------------------------------------------------------
-
-# NOTE: /api/detect/manual MUST be defined before /api/detect/{slot}
-# otherwise FastAPI matches "manual" as a slot int and returns 422.
 
 @app.post("/api/detect/manual")
 async def detect_manual(req: ManualCropRequest) -> dict[str, str]:
@@ -470,42 +518,6 @@ async def detect_manual(req: ManualCropRequest) -> dict[str, str]:
     else:
         return {"status": "error", "error": "OBS not connected"}
     return {"status": "ok"}
-
-
-@app.post("/api/detect/{slot}", response_model=DetectResponse)
-async def detect_slot(slot: int) -> DetectResponse:
-    feed = ingest.get_feed(slot)
-    if feed is None:
-        return DetectResponse(success=False)
-
-    try:
-        frame = await asyncio.to_thread(capture_frame_from_url, feed.obs_input_url)
-    except RuntimeError as exc:
-        log.warning("Frame capture failed for slot %d: %s", slot, exc)
-        return DetectResponse(success=False)
-
-    result = await asyncio.to_thread(detector.detect, frame, debug=True)
-    preview_b64 = None
-    if result.debug_frame is not None:
-        _, buf = cv2.imencode(".jpg", result.debug_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-        preview_b64 = base64.b64encode(buf.tobytes()).decode()
-
-    resp = DetectResponse(
-        success=result.success,
-        confidence=result.confidence,
-        game_crop=result.game_crop.to_dict() if result.game_crop else None,
-        tracker_crop=result.tracker_crop.to_dict() if result.tracker_crop else None,
-        preview_b64=preview_b64,
-    )
-
-    # If detection succeeded and OBS is connected, apply the crop automatically
-    if result.success and result.game_crop and obs.connected:
-        source_name = f"Racer{slot + 1}_Game"
-        obs_crop = result.game_crop.to_obs_crop(1920, 1080)
-        await obs.set_source_crop(source_name, SourceCrop(**obs_crop))
-        await broadcast("detect:applied", {"slot": slot, "crop": result.game_crop.to_dict()})
-
-    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -554,6 +566,47 @@ async def obs_init() -> dict[str, Any]:
         return {"status": "error", "error": "OBS not connected"}
     await _provision_running_feeds()
     return {"status": "ok"}
+
+
+@app.post("/api/obs/launch")
+async def obs_launch() -> dict[str, str]:
+    """Attempt to launch OBS Studio as a detached process."""
+    try:
+        if sys.platform == "win32":
+            # Common install locations on Windows
+            candidates = [
+                Path(r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"),
+                Path(r"C:\Program Files (x86)\obs-studio\bin\64bit\obs64.exe"),
+            ]
+            obs_path = shutil.which("obs64") or shutil.which("obs")
+            if obs_path:
+                candidates.insert(0, Path(obs_path))
+            for p in candidates:
+                if p.exists():
+                    subprocess.Popen(
+                        [str(p)],
+                        creationflags=subprocess.DETACHED_PROCESS
+                        | subprocess.CREATE_NEW_PROCESS_GROUP,
+                    )
+                    return {"status": "ok"}
+            return {"status": "error", "error": "OBS not found"}
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-a", "OBS"])
+            return {"status": "ok"}
+        else:
+            obs_bin = shutil.which("obs")
+            if not obs_bin:
+                return {"status": "error", "error": "OBS not found on PATH"}
+            subprocess.Popen(
+                [obs_bin],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return {"status": "ok"}
+    except Exception as exc:
+        log.warning("Failed to launch OBS: %s", exc)
+        return {"status": "error", "error": str(exc)}
 
 
 @app.post("/api/obs/crop")
@@ -845,7 +898,12 @@ async def delete_preset(preset_id: int) -> dict[str, Any]:
 
 @app.post("/api/presets/{preset_id}/apply")
 async def apply_preset(preset_id: int, slot: int = 0) -> dict[str, Any]:
-    """Apply a saved preset's crop regions to OBS sources for the given slot."""
+    """Apply a saved preset's crop regions to OBS sources for the given slot.
+
+    Crop coordinates are rescaled from the resolution they were saved at
+    to the resolution of the currently-running feed so that presets remain
+    correct after a quality change.
+    """
     try:
         p = presets.get_preset(preset_id)
     except KeyError:
@@ -854,6 +912,17 @@ async def apply_preset(preset_id: int, slot: int = 0) -> dict[str, Any]:
     if not obs.connected:
         return {"status": "error", "error": "OBS not connected"}
 
+    # Determine the current feed resolution from the snapshot
+    cur_w, cur_h = 0, 0
+    feed = ingest.get_feed(slot)
+    if feed and feed.snapshot_path.exists():
+        try:
+            raw = await asyncio.to_thread(feed.snapshot_path.read_bytes)
+            img = Image.open(BytesIO(raw))
+            cur_w, cur_h = img.size
+        except Exception:
+            pass
+
     applied = []
     for region_name, crop_data in [
         ("game", p.game_crop), ("tracker", p.tracker_crop), ("timer", p.timer_crop),
@@ -861,14 +930,22 @@ async def apply_preset(preset_id: int, slot: int = 0) -> dict[str, Any]:
         if not crop_data:
             continue
         source_name = f"Racer{slot + 1}_{region_name.capitalize()}"
+
+        saved_w = crop_data.get("source_width", 1920)
+        saved_h = crop_data.get("source_height", 1080)
+        # Use current feed resolution if available, otherwise fall back to saved
+        target_w = cur_w or saved_w
+        target_h = cur_h or saved_h
+        # Rescale crop from saved resolution to current resolution
+        scale_x = target_w / saved_w if saved_w else 1
+        scale_y = target_h / saved_h if saved_h else 1
         rect = CropRect(
-            x=crop_data["x"], y=crop_data["y"],
-            width=crop_data["width"], height=crop_data["height"],
+            x=round(crop_data["x"] * scale_x),
+            y=round(crop_data["y"] * scale_y),
+            width=round(crop_data["width"] * scale_x),
+            height=round(crop_data["height"] * scale_y),
         )
-        obs_crop = rect.to_obs_crop(
-            crop_data.get("source_width", 1920),
-            crop_data.get("source_height", 1080),
-        )
+        obs_crop = rect.to_obs_crop(target_w, target_h)
         try:
             await obs.set_source_crop(source_name, SourceCrop(**obs_crop))
             applied.append(region_name)

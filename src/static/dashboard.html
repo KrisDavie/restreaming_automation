@@ -33,7 +33,7 @@
         .card-header.red    { background: #c6282822; border-left: 3px solid var(--red); }
         .card-header.teal   { background: #00796b22; border-left: 3px solid var(--teal); }
         .card-header.yellow { background: #f57f1722; border-left: 3px solid var(--yellow); }
-        .card-body { padding: 14px 16px; }
+        .card-body { padding: 12px 14px; }
         label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 3px; }
         input, select { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg3); color: var(--text); font-size: 13px; outline: none; margin-bottom: 8px; }
         input:focus { border-color: var(--blue); }
@@ -49,10 +49,10 @@
         .btn-active { outline: 2px solid var(--text); outline-offset: 1px; }
         .inline-input { width: 80px !important; display: inline-block; margin: 0 !important; padding: 4px 8px !important; font-size: 12px !important; }
         .nudge-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-top: 8px; }
-        .log { font-family: 'Cascadia Code', monospace; font-size: 11px; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 8px; max-height: 120px; overflow-y: auto; color: var(--text2); white-space: pre-wrap; margin-top: 10px; }
-        .slot-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin-bottom: 8px; position: relative; }
-        .slot-box h4 { font-size: 13px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
-        .preview-img { width: 100%; border-radius: 4px; margin-top: 8px; display: none; border: 1px solid var(--border); background: var(--bg3); }
+        .log { font-family: 'Cascadia Code', monospace; font-size: 11px; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 6px; max-height: 80px; overflow-y: auto; color: var(--text2); white-space: pre-wrap; margin-top: 8px; }
+        .slot-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 8px; margin-bottom: 6px; position: relative; }
+        .slot-box h4 { font-size: 12px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+        .preview-img { max-width: 240px; border-radius: 4px; margin-top: 6px; display: none; border: 1px solid var(--border); background: var(--bg3); }
         .preview-label { font-size: 11px; color: var(--text2); margin-top: 4px; }
         .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -119,6 +119,16 @@
                 <span style="font-size:11px;color:var(--text2);margin-left:auto" id="ingestSlotCount">2 Slots</span>
             </div>
             <div class="card-body">
+                <!-- Twitch OAuth Token -->
+                <div style="display:flex;gap:6px;align-items:flex-end;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)">
+                    <div style="flex:1">
+                        <label>Twitch OAuth Token <span style="font-size:10px;color:var(--text2)">(bypasses ads)</span></label>
+                        <input id="twitchToken" type="password" placeholder="OAuth token (leave empty to skip)">
+                    </div>
+                    <button class="bp btn-sm" onclick="setTwitchToken()" style="white-space:nowrap">💾 Set</button>
+                    <button class="bb btn-sm" onclick="clearTwitchToken()" style="white-space:nowrap">✕ Clear</button>
+                    <span id="tokenStatus" style="font-size:11px;white-space:nowrap;color:var(--text2)"></span>
+                </div>
                 <div class="btn-group" style="margin-bottom:8px" id="ingestTabs"></div>
                 <div id="ingestSlots"></div>
                 <div class="log" id="iLog"></div>
@@ -133,6 +143,7 @@
                     <div class="slot-box">
                         <h4><span class="dot off" id="obsDot"></span> OBS WebSocket</h4>
                         <div class="btn-group">
+                            <button class="bp btn-sm" onclick="launchObs()">🚀 Launch OBS</button>
                             <button class="bg btn-sm" onclick="obsConn()">Connect</button>
                             <button class="br btn-sm" onclick="obsDisc()">Disconnect</button>
                             <button class="bb btn-sm" onclick="obsInit()">🔄 Re-provision</button>
@@ -170,7 +181,7 @@
             <div class="card">
                 <div class="card-header teal">Audio Mixer</div>
                 <div class="card-body">
-                    <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Quick source select (mutes others):</div>
+                    <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Solo a racer's audio (mutes all others):</div>
                     <div class="btn-group" id="audioBtns"></div>
                     <hr style="border-color:var(--border);margin:10px 0">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -272,14 +283,12 @@
                     <button class="by btn-sm" id="cropModeTimer" onclick="setCropMode('timer')">⏱ Timer</button>
                     <span style="width:1px;background:var(--border);margin:0 4px"></span>
                     <button class="bb btn-sm" onclick="refreshCropPreview()">📷 Refresh</button>
-                    <button class="bg btn-sm" onclick="autoCrop()">🔍 Auto-Detect</button>
                     <button class="bp btn-sm" onclick="applyAllCrops()">✓ Apply to OBS</button>
                     <button class="br btn-sm" onclick="clearCropRegion()">✕ Clear Region</button>
                 </div>
 
                 <div style="display:flex;gap:12px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
                     <span style="font-size:12px;color:var(--text2)">Mode: <b id="cropModeLabel" style="color:var(--green)">Game</b></span>
-                    <span id="dStat" style="font-size:11px;color:var(--text2)"></span>
                     <label style="margin:0;font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;margin-left:auto">
                         <input type="checkbox" id="magToggle" checked style="width:auto;margin:0"> Magnifier
                     </label>
@@ -505,6 +514,7 @@ function renderIngestTabs() {
             <div class="btn-group">
                 <button class="bg btn-sm" onclick="startF(${i})">\u25b6 Start</button>
                 <button class="br btn-sm" onclick="stopF(${i})">\u25a0 Stop</button>
+                <button class="br btn-sm" onclick="reconnectF(${i})">\u21bb Reconnect</button>
                 <button class="bb btn-sm" onclick="refreshPreview(${i})">\ud83d\udcf7 Preview</button>
             </div>
             <img class="preview-img" id="prev${i}">
@@ -544,9 +554,9 @@ function renderAudioBtns() {
     container.innerHTML = '';
     for (let i = 0; i < numSlots; i++) {
         const btn = document.createElement('button');
-        btn.className = 'bt audio-btn btn-sm';
+        btn.className = 'bg audio-btn btn-sm';
         btn.id = `audioBtn${i}`;
-        btn.textContent = `\ud83d\udd0a Racer ${i + 1}`;
+        btn.textContent = `\ud83d\udd0a Solo Racer ${i + 1}`;
         btn.onclick = () => switchAudio(i);
         container.appendChild(btn);
     }
@@ -582,11 +592,23 @@ function wsConnect() {
 }
 wsConnect();
 function handleEvent(ev, d) {
-    if (ev==='ingest:started') setDot(d.slot, true);
+    if (ev==='ingest:started') { setDot(d.slot, true); const el = document.getElementById(`u${d.slot}`); if (el && d.url) el.value = d.url; }
     if (ev==='ingest:stopped') setDot(d.slot, false);
+    if (ev==='ingest:reconnecting') {
+        logMsg($('#iLog'), `⚠ Slot ${d.slot}: stream interrupted, reconnecting (attempt ${d.attempt}, ${d.delay}s)…`);
+        setDot(d.slot, false);
+    }
+    if (ev==='ingest:reconnected') {
+        logMsg($('#iLog'), `✓ Slot ${d.slot}: reconnected successfully`);
+        setDot(d.slot, true);
+        const el = document.getElementById(`u${d.slot}`); if (el && d.url) el.value = d.url;
+    }
+    if (ev==='ingest:reconnect_failed') {
+        logMsg($('#iLog'), `✗ Slot ${d.slot}: reconnect failed after ${d.attempts} attempts`);
+    }
     if (ev==='obs:connected')  { $('#obsDot').className='dot on'; loadSc(); populateProjectorRes(); apiGet('/api/obs/status').then(s => updateAudioCaptureUI(s.platform)).catch(()=>{}); }
     if (ev==='obs:disconnected') $('#obsDot').className='dot off';
-    if (ev==='audio:switched') updateAudioUI(d.active_slot);
+    if (ev==='audio:switched') { updateAudioUI(d.active_slot); refreshMixer(); }
     if (ev==='audio:volume' || ev==='audio:mute') refreshMixer();
     if (ev==='obs:source_created') logMsg($('#oLog'), `Auto-created source: ${d.source}`);
     if (ev==='template:applied') {
@@ -598,6 +620,32 @@ function handleEvent(ev, d) {
 /* ================================================================
    INGEST
    ================================================================ */
+/* --- Twitch OAuth Token --- */
+async function setTwitchToken() {
+    const token = document.getElementById('twitchToken').value.trim();
+    if (!token) { logMsg($('#iLog'), 'Enter a token first'); return; }
+    try {
+        const r = await apiPost('/api/ingest/token', { token });
+        document.getElementById('tokenStatus').textContent = '✓ Token set';
+        document.getElementById('twitchToken').value = '';
+        logMsg($('#iLog'), 'Twitch OAuth token set — takes effect on next feed start/reconnect');
+    } catch(e) { logMsg($('#iLog'), `Token error: ${e.message}`); }
+}
+async function clearTwitchToken() {
+    try {
+        await apiPost('/api/ingest/token', { token: '' });
+        document.getElementById('tokenStatus').textContent = 'No token';
+        document.getElementById('twitchToken').value = '';
+        logMsg($('#iLog'), 'Twitch OAuth token cleared');
+    } catch(e) { logMsg($('#iLog'), `Token error: ${e.message}`); }
+}
+async function checkTwitchToken() {
+    try {
+        const r = await apiGet('/api/ingest/token');
+        document.getElementById('tokenStatus').textContent = r.has_token ? '✓ Token set' : 'No token';
+    } catch {}
+}
+
 function setDot(s, on) { const e = document.getElementById(`d${s}`); if (e) e.className = `dot ${on?'on':'off'}`; }
 
 async function fetchQualities(s) {
@@ -662,6 +710,16 @@ async function stopF(s) {
         const el = document.getElementById(`prev${s}`); if (el) el.style.display = 'none';
         document.getElementById(`prevInfo${s}`).textContent = '';
     } catch(e) { logMsg($('#iLog'),`Error: ${e.message}`); }
+}
+
+async function reconnectF(s) {
+    showLoading(`load${s}`, 'Reconnecting…');
+    try {
+        const r = await apiPost('/api/ingest/reconnect', {slot: s});
+        logMsg($('#iLog'), `Slot ${s}: reconnected → ${r.local_url}`);
+        setDot(s, true);
+    } catch(e) { logMsg($('#iLog'), `Reconnect error: ${e.message}`); }
+    finally { hideLoading(`load${s}`); }
 }
 
 async function refreshPreview(slot) {
@@ -986,35 +1044,6 @@ async function applyAllCrops() {
     if (applied === 0) logMsg($('#cLog'), 'No crop regions defined to apply.');
 }
 
-async function autoCrop() {
-    $('#dStat').textContent = 'Detecting…';
-    showLoading('loadCrop', 'Running auto-detect…');
-    try {
-        const r = await apiPost(`/api/detect/${cropSlot}`);
-        if (r.success) {
-            $('#dStat').textContent = `✓ ${(r.confidence*100).toFixed(1)}%`;
-            if (r.game_crop) {
-                cropRegions[cropSlot].game = {
-                    x1: r.game_crop.x, y1: r.game_crop.y,
-                    x2: r.game_crop.x + r.game_crop.width, y2: r.game_crop.y + r.game_crop.height,
-                };
-            }
-            if (r.tracker_crop) {
-                cropRegions[cropSlot].tracker = {
-                    x1: r.tracker_crop.x, y1: r.tracker_crop.y,
-                    x2: r.tracker_crop.x + r.tracker_crop.width, y2: r.tracker_crop.y + r.tracker_crop.height,
-                };
-            }
-            syncInputsFromRegion();
-            drawCropCanvas();
-            logMsg($('#cLog'), `Slot ${cropSlot}: auto-crop detected regions`);
-        } else {
-            $('#dStat').textContent = `✗ ${(r.confidence*100).toFixed(1)}%`;
-            logMsg($('#cLog'), 'Auto-detect failed – use manual crop');
-        }
-    } catch(e) { $('#dStat').textContent = 'Error'; logMsg($('#cLog'), e.message); }
-    finally { hideLoading('loadCrop'); }
-}
 
 // Wire canvas events
 document.addEventListener('DOMContentLoaded', () => {
@@ -1276,6 +1305,13 @@ async function resetSync() {
 /* ================================================================
    OBS
    ================================================================ */
+async function launchObs() {
+    try {
+        const r = await apiPost('/api/obs/launch');
+        if (r.status === 'ok') logMsg($('#oLog'), 'OBS launched');
+        else logMsg($('#oLog'), `Launch failed: ${r.error}`);
+    } catch(e) { logMsg($('#oLog'), `Launch error: ${e.message}`); }
+}
 async function obsConn() {
     try {
         await apiPost('/api/obs/connect');
@@ -1342,16 +1378,22 @@ async function applyPreset(id) {
     try {
         const r = await apiPost(`/api/presets/${id}/apply?slot=${cropSlot}`);
         logMsg($('#cLog'), `Preset applied: ${(r.applied||[]).join(', ') || 'none'}`);
-        // Also load into local crop regions
+        // Also load into local crop regions, rescaling to current preview resolution
         const pr = await apiGet('/api/presets?channel=');
         const p = (pr.presets||[]).find(x => x.id === id);
         if (p) {
             for (const mode of ['game','tracker','timer']) {
                 const key = mode + '_crop';
                 if (p[key]) {
+                    const sw = p[key].source_width || 1920;
+                    const sh = p[key].source_height || 1080;
+                    const sx = cropImgW ? cropImgW / sw : 1;
+                    const sy = cropImgH ? cropImgH / sh : 1;
                     cropRegions[cropSlot][mode] = {
-                        x1: p[key].x, y1: p[key].y,
-                        x2: p[key].x + p[key].width, y2: p[key].y + p[key].height,
+                        x1: Math.round(p[key].x * sx),
+                        y1: Math.round(p[key].y * sy),
+                        x2: Math.round((p[key].x + p[key].width) * sx),
+                        y2: Math.round((p[key].y + p[key].height) * sy),
                     };
                 }
             }
@@ -1674,11 +1716,13 @@ function drawTplCanvas() {
         ctx.strokeRect(tx, ty, tw, th);
         ctx.setLineDash([]);
 
-        // Text content (scaled to fit box height)
+        // Text content – match OBS FreeType2 "Sans Serif" (normal weight)
         ctx.fillStyle = t.color || '#ffffff';
-        const fontSize = Math.max(8, Math.round(th * 0.7));
-        ctx.font = `bold ${fontSize}px system-ui`;
-        ctx.fillText(t.text || '', tx + 4, ty + fontSize);
+        const fontSize = Math.max(8, Math.round((t.font_size || 36) * sy));
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(t.text || '', tx + 2, ty + 2);
+        ctx.textBaseline = 'alphabetic';
 
         // Corner handles (in text mode)
         if (tplMode === 'text') {
@@ -1907,11 +1951,24 @@ document.addEventListener('DOMContentLoaded', () => {
             setDot(+s, i.running);
             const urlEl = document.getElementById(`u${s}`);
             if (urlEl && i.url) urlEl.value = i.url;
+            if (i.quality) {
+                const qSel = document.getElementById(`q${s}`);
+                if (qSel) {
+                    // Add the quality option if not present
+                    if (![...qSel.options].some(o => o.value === i.quality)) {
+                        const opt = document.createElement('option');
+                        opt.value = i.quality; opt.textContent = i.quality;
+                        qSel.appendChild(opt);
+                    }
+                    qSel.value = i.quality;
+                }
+            }
         }
     } catch {}
     setCropMode('game');
     loadPresets();
     refreshTemplates();
+    checkTwitchToken();
 })();
 </script>
 </body>
