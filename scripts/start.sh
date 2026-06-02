@@ -31,18 +31,16 @@ if [[ -f "venv/bin/activate" ]]; then
 fi
 
 # ── Start Python API backend ──────────────────────────────────
-echo -e "${GREEN}${BOLD}Starting Python API server…${NC}"
+echo -e "${GREEN}${BOLD}Starting Python API server...${NC}"
 python -m src &
 API_PID=$!
 
-cat <<EOF
-
-${BOLD}Services started:${NC}
-  - API Backend  → http://localhost:8008        (PID: $API_PID)
-  - Dashboard    → http://localhost:8008/dashboard
-  - API Docs     → http://localhost:8008/docs
-
-Press Ctrl+C to stop.
-EOF
+echo ""
+echo -e "${BOLD}Services started:${NC}"
+echo "  - API Backend  -> http://localhost:8008        (PID: $API_PID)"
+echo "  - Dashboard    -> http://localhost:8008/dashboard"
+echo "  - API Docs     -> http://localhost:8008/docs"
+echo ""
+echo "Press Ctrl+C to stop."
 
 wait "$API_PID" 2>/dev/null || true

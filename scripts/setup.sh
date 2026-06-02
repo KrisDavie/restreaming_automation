@@ -109,9 +109,8 @@ cat <<'EOF'
 
 Next steps:
   1. Edit .env with your OBS WebSocket password
-  2. Place template images (hearts.png etc.) in ./templates/
-  3. Start the server:    ./scripts/start.sh
+  2. Start the server:    ./scripts/start.sh
      Or manually:         source venv/bin/activate && python -m src
-  4. Open dashboard:      http://localhost:8008/dashboard
+  3. Open dashboard:      http://localhost:8008/dashboard
 
 EOF

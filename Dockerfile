@@ -36,7 +36,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 FROM base AS production
 COPY src/ src/
 COPY scripts/ scripts/
-COPY templates/ templates/
 CMD ["python", "-m", "src"]
 
 # ── Development stage ───────────────────────────────────────────

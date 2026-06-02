@@ -532,7 +532,11 @@ async def obs_connect() -> dict[str, Any]:
         # Still provision any feeds that haven't been set up yet
         await _provision_running_feeds()
         return {"status": "already_connected"}
-    await obs.connect()
+    try:
+        await obs.connect()
+    except Exception as exc:
+        log.warning("OBS connect failed: %s", exc)
+        return {"status": "error", "error": str(exc)}
     await broadcast("obs:connected", {})
     # Rebuild cache for existing scene items
     await obs._rebuild_scene_cache(RACE_SCENE)
@@ -585,6 +589,7 @@ async def obs_launch() -> dict[str, str]:
                 if p.exists():
                     subprocess.Popen(
                         [str(p)],
+                        cwd=str(p.parent),
                         creationflags=subprocess.DETACHED_PROCESS
                         | subprocess.CREATE_NEW_PROCESS_GROUP,
                     )

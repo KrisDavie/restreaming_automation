@@ -43,7 +43,6 @@ git clone <this-repo>
 cd restreaming_automation
 .\scripts\setup.ps1       # installs Python venv
 # Edit .env with your OBS WebSocket password
-# Place hearts.png in ./templates/
 .\scripts\start.ps1       # launches API server
 ```
 
@@ -55,7 +54,6 @@ cd restreaming_automation
 chmod +x scripts/*.sh
 ./scripts/setup.sh         # installs Python venv
 # Edit .env with your OBS WebSocket password
-# Place hearts.png in ./templates/
 ./scripts/start.sh         # launches API server (Ctrl+C stops)
 ```
 
