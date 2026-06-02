@@ -894,16 +894,17 @@ function drawCropCanvas() {
 function canvasToImage(canvas, e) {
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    const ix = Math.round(cx / canvas.width * cropImgW);
-    const iy = Math.round(cy / canvas.height * cropImgH);
+    const ix = Math.round(cx / rect.width * cropImgW);
+    const iy = Math.round(cy / rect.height * cropImgH);
     return { cx, cy, ix: Math.max(0, Math.min(cropImgW-1, ix)), iy: Math.max(0, Math.min(cropImgH-1, iy)) };
 }
 
 function hitCorner(canvas, e) {
     const r = cropRegions[cropSlot][cropMode];
     if (!r) return null;
-    const sx = canvas.width / cropImgW, sy = canvas.height / cropImgH;
     const rect = canvas.getBoundingClientRect();
+    const sx = rect.width / cropImgW, sy = rect.height / cropImgH;
+
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     const corners = [
         { name: 'tl', x: r.x1 * sx, y: r.y1 * sy },
@@ -974,7 +975,8 @@ function onCropMouseMove(e) {
     if (my < 0) my = e.clientY - container.top + 20;
     mag.style.left = mx + 'px'; mag.style.top = my + 'px'; mag.style.display = 'block';
     const zoomW = cropImgW * 4, zoomH = cropImgH * 4;
-    const scaleX = cropImgW / canvas.width, scaleY = cropImgH / canvas.height;
+    const canvasRect = canvas.getBoundingClientRect();
+    const scaleX = cropImgW / canvasRect.width, scaleY = cropImgH / canvasRect.height;
     const bgX = -(cx * scaleX * 4) + 80, bgY = -(cy * scaleY * 4) + 80;
     mag.style.backgroundImage = `url(${cropImg.src})`;
     mag.style.backgroundSize = `${zoomW}px ${zoomH}px`;
@@ -1945,6 +1947,13 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch {}
 
     try { const r = await apiGet('/api/obs/status'); if (r.connected) { $('#obsDot').className = 'dot on'; loadSc(); populateProjectorRes(); updateAudioCaptureUI(r.platform); } } catch {}
+    setCropMode('game');
+    loadPresets();
+    await refreshTemplates();
+    checkTwitchToken();
+
+    // Populate feed URLs AFTER template loading (which may re-render
+    // ingest tabs via setNumSlots, wiping any previously set values).
     try {
         const r = await apiGet('/api/ingest/status');
         for (const [s, i] of Object.entries(r.feeds||{})) {
@@ -1965,10 +1974,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     } catch {}
-    setCropMode('game');
-    loadPresets();
-    refreshTemplates();
-    checkTwitchToken();
 })();
 </script>
 </body>

@@ -1,5 +1,5 @@
-<#
-    Restreaming Automation – Start API server
+﻿<#
+    Restreaming Automation - Start API server
 #>
 
 $ErrorActionPreference = "Stop"
@@ -12,7 +12,7 @@ if (Test-Path ".\venv\Scripts\Activate.ps1") {
 }
 
 # Start Python backend
-Write-Host "Starting Python API server…" -ForegroundColor Green
+Write-Host "Starting Python API server..." -ForegroundColor Green
 $apiJob = Start-Job -ScriptBlock {
     Set-Location $using:PWD
     & .\venv\Scripts\python.exe -m src
@@ -21,9 +21,9 @@ $apiJob = Start-Job -ScriptBlock {
 Write-Host @"
 
 Services started:
-  - API Backend  → http://localhost:8008        (Job: $($apiJob.Id))
-  - Dashboard    → http://localhost:8008/dashboard
-  - API Docs     → http://localhost:8008/docs
+  - API Backend  -> http://localhost:8008        (Job: $($apiJob.Id))
+  - Dashboard    -> http://localhost:8008/dashboard
+  - API Docs     -> http://localhost:8008/docs
 
 Press Ctrl+C to stop.
 "@ -ForegroundColor White
@@ -37,7 +37,7 @@ try {
         }
     }
 } finally {
-    Write-Host "`nStopping services…" -ForegroundColor Yellow
+    Write-Host "`nStopping services..." -ForegroundColor Yellow
     Stop-Job $apiJob -ErrorAction SilentlyContinue
     Remove-Job $apiJob -Force -ErrorAction SilentlyContinue
     Write-Host "All services stopped." -ForegroundColor Green

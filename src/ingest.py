@@ -87,6 +87,7 @@ class IngestFeed:
     start_offset: int = 0  # VOD start offset in seconds
     process: Optional[asyncio.subprocess.Process] = field(default=None, repr=False)
     _sl_proc: Optional[asyncio.subprocess.Process] = field(default=None, repr=False)
+    _snap_proc: Optional[asyncio.subprocess.Process] = field(default=None, repr=False)
     _monitor_task: Optional[asyncio.Task[None]] = field(default=None, repr=False)
 
     @property
@@ -94,14 +95,14 @@ class IngestFeed:
         proto = self.protocol.value
         if self.protocol == IngestProtocol.SRT:
             return f"srt://127.0.0.1:{self.local_port}?mode=listener"
-        return f"{proto}://127.0.0.1:{self.local_port}"
+        return f"{proto}://127.0.0.1:{self.local_port}?pkt_size=1316"
 
     @property
     def obs_input_url(self) -> str:
         """URL that OBS Media Source should point to."""
         if self.protocol == IngestProtocol.SRT:
             return f"srt://127.0.0.1:{self.local_port}?mode=caller"
-        return f"udp://127.0.0.1:{self.local_port}"
+        return f"udp://127.0.0.1:{self.local_port}?buffer_size=1048576&fifo_size=1000000"
 
     @property
     def snapshot_path(self) -> Path:
@@ -266,6 +267,8 @@ class IngestManager:
                 pass
         # Kill ffmpeg
         await self._kill_proc(feed.process)
+        # Kill snapshot ffmpeg
+        await self._kill_proc(feed._snap_proc)
         # Kill streamlink (may already be dead from broken pipe, but be safe)
         await self._kill_proc(feed._sl_proc)
         # Clean up snapshot file
@@ -296,6 +299,10 @@ class IngestManager:
         self, feed: IngestFeed,
     ) -> tuple[asyncio.subprocess.Process, asyncio.subprocess.Process]:
         """Spawn `streamlink ... --stdout | ffmpeg ... <protocol>://...`.
+
+        Also spawns a separate lightweight FFmpeg for periodic dashboard
+        preview snapshots so that video decoding for thumbnails cannot
+        create back-pressure on the real-time copy stream.
 
         Returns ``(streamlink_proc, ffmpeg_proc)``.
         """
@@ -346,23 +353,29 @@ class IngestManager:
             ffmpeg_bin,
             "-hide_banner",
             "-loglevel", "warning",
-            # Regenerate PTS and discard corrupt packets – prevents A/V
-            # desync caused by encoder timestamp offsets or HLS segment
-            # boundaries that differ between audio and video tracks.
             "-fflags", "+genpts+discardcorrupt",
             "-i", "pipe:0",
-            # Output 1: MPEG-TS stream to OBS (passthrough, no decode)
+            # Pure passthrough – no decode, no filtering
             "-map", "0",
             "-c", "copy",
-            # Shift timestamps so the stream starts at zero – avoids
-            # carrying over source PTS offsets that OBS can't compensate.
             "-avoid_negative_ts", "make_zero",
+            "-flush_packets", "1",
             "-f", "mpegts",
             ffmpeg_output,
-            # Output 2: periodic snapshot JPEG for dashboard preview
+        ]
+
+        # Separate lightweight process for dashboard preview snapshots.
+        # Decoding video for thumbnails is isolated so it cannot stall
+        # the real-time copy stream.
+        snap_cmd = [
+            ffmpeg_bin,
+            "-hide_banner",
+            "-loglevel", "error",
+            "-fflags", "+discardcorrupt",
+            "-i", "pipe:0",
             "-map", "0:v:0",
             "-vf", "fps=0.5",
-            "-q:v", "4",
+            "-q:v", "2",
             "-update", "1",
             "-y",
             snapshot,
@@ -370,32 +383,92 @@ class IngestManager:
 
         log.debug("Streamlink cmd: %s", streamlink_cmd)
         log.debug("FFmpeg cmd: %s", ffmpeg_cmd)
+        log.debug("Snapshot cmd: %s", snap_cmd)
 
-        # Create a real OS pipe so both subprocesses share a kernel‐level
-        # file descriptor.  This works with uvloop (which rejects asyncio
-        # StreamReader objects that lack fileno()).
-        r_fd, w_fd = os.pipe()
+        # Pipe architecture:
+        #   streamlink stdout → tee stdin
+        #   tee stdout        → main FFmpeg stdin  (pure -c copy)
+        #   tee write-fd      → snap FFmpeg stdin   (decode for thumbnails)
+        #
+        # If tee(1) is available (Linux/Mac), use it. Otherwise use a Python
+        # background thread acting as a non-blocking tee (Windows).
+        sl_r, sl_w = os.pipe()   # streamlink stdout → tee stdin
+        ff_r, ff_w = os.pipe()   # tee stdout  → main ffmpeg stdin
+        sn_r, sn_w = os.pipe()   # tee write-fd → snapshot ffmpeg stdin
 
-        # Start streamlink – writes into the pipe
+        # Start streamlink – writes into sl_w
         sl_proc = await asyncio.create_subprocess_exec(
             *streamlink_cmd,
-            stdout=w_fd,
+            stdout=sl_w,
             stderr=asyncio.subprocess.DEVNULL,
         )
+        os.close(sl_w)
 
-        # Parent no longer needs the write end
-        os.close(w_fd)
+        tee_proc = None
+        tee_bin = shutil.which("tee")
+        if tee_bin and sys.platform != "win32":
+            tee_proc = await asyncio.create_subprocess_exec(
+                tee_bin, f"/dev/fd/{sn_w}",
+                stdin=sl_r,
+                stdout=ff_w,
+                stderr=asyncio.subprocess.DEVNULL,
+                pass_fds=(sn_w,),
+            )
+            os.close(sl_r)
+            os.close(ff_w)
+            os.close(sn_w)
+        else:
+            # Python threading fallback for tee
+            import threading
+            def python_tee(src_fd, main_fd, snap_fd):
+                try:
+                    while True:
+                        try:
+                            # Read multiples of 188 (MPEG-TS packet size) to avoid splitting packets
+                            chunk = os.read(src_fd, 65424)
+                        except OSError:
+                            break
+                        if not chunk:
+                            break
+                        try:
+                            os.write(main_fd, chunk)
+                        except OSError:
+                            break  # main process died
+                        try:
+                            os.write(snap_fd, chunk)
+                        except OSError:
+                            pass  # snap proc died, ignore
+                finally:
+                    for fd in (src_fd, main_fd, snap_fd):
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+            
+            feed._tee_thread = threading.Thread(
+                target=python_tee, args=(sl_r, ff_w, sn_w), daemon=True
+            )
+            feed._tee_thread.start()
+            # The thread claims ownership of sl_r, ff_w, sn_w; don't close them here.
 
-        # Start ffmpeg – reads from the pipe
+        # Main FFmpeg – pure passthrough copy, reads from ff_r
         ff_proc = await asyncio.create_subprocess_exec(
             *ffmpeg_cmd,
-            stdin=r_fd,
+            stdin=ff_r,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
+        os.close(ff_r)
 
-        # Parent no longer needs the read end
-        os.close(r_fd)
+        # Snapshot FFmpeg – lightweight decode for dashboard thumbnails
+        snap_proc = await asyncio.create_subprocess_exec(
+            *snap_cmd,
+            stdin=sn_r,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        os.close(sn_r)
+        feed._snap_proc = snap_proc
 
         return sl_proc, ff_proc
 
@@ -428,8 +501,9 @@ class IngestManager:
             if not self._reconnect_enabled.get(slot, False):
                 return
 
-            # Also ensure streamlink is dead before respawning
+            # Also ensure streamlink and snapshot ffmpeg are dead before respawning
             await self._kill_proc(feed._sl_proc)
+            await self._kill_proc(feed._snap_proc)
 
             attempts += 1
             if attempts > _RECONNECT_MAX_ATTEMPTS:
