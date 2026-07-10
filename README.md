@@ -127,7 +127,7 @@ restreaming_automation/
 | POST | `/api/obs/disconnect` | Disconnect |
 | GET | `/api/obs/status` | Connection status + platform info |
 | GET | `/api/obs/video-settings` | Get OBS canvas resolution/FPS |
-| GET | `/api/obs/scenes` | List available scenes |
+| GET | `/api/obs/scenes` | List available scenes (+ current program scene) |
 | GET | `/api/obs/screenshot` | Capture current scene preview |
 | POST | `/api/obs/init` | Re-provision Race Scene sources |
 | POST | `/api/obs/crop` | Apply crop filter |
@@ -135,6 +135,7 @@ restreaming_automation/
 | POST | `/api/obs/scene` | Switch scene |
 | POST | `/api/obs/stream/start` | Start streaming |
 | POST | `/api/obs/stream/stop` | Stop streaming |
+| GET | `/api/obs/stream/status` | Live-stream state (active, timecode, dropped frames) |
 | POST | `/api/obs/projector` | Open OBS projector window |
 
 ### Audio
@@ -147,7 +148,7 @@ restreaming_automation/
 | POST | `/api/obs/audio/discord` | Create commentary audio capture (device or app) |
 | POST | `/api/obs/audio/monitor` | Set audio monitoring type |
 | GET | `/api/obs/audio/devices` | List audio capture devices |
-| GET | `/api/obs/audio/mixer` | Get all mixer strip states |
+| GET | `/api/obs/audio/mixer` | Get mixer strip states (`?scope=scene` limits to the current scene, `?scope=all` for everything) |
 
 ### Templates & Presets
 
@@ -155,15 +156,21 @@ restreaming_automation/
 |--------|----------|-------------|
 | GET | `/api/templates` | List templates |
 | POST | `/api/templates/upload` | Upload template image |
+| POST | `/api/templates/blank` | Create an image-less template `{ name, width, height }` |
 | GET | `/api/templates/{id}` | Get template details + image |
 | PUT | `/api/templates/{id}/regions` | Update template region layout |
 | POST | `/api/templates/{id}/apply` | Apply template to OBS |
 | DELETE | `/api/templates/{id}` | Delete template |
 | GET | `/api/active-template` | Get currently active template |
 | GET | `/api/presets` | List crop presets |
-| POST | `/api/presets` | Save crop preset |
-| POST | `/api/presets/{id}/apply` | Apply preset crops |
+| POST | `/api/presets` | Save crop preset (incl. `extra_crops` for custom regions) |
+| POST | `/api/presets/{id}/apply` | Apply preset crops + attached images |
+| POST | `/api/presets/{id}/image?region=` | Attach an image to a preset (e.g. tracker placeholder) |
+| DELETE | `/api/presets/{id}/image?region=` | Remove an attached image |
 | DELETE | `/api/presets/{id}` | Delete preset |
+| GET/POST | `/api/custom-regions` | List / add custom crop regions (shared by all racers) |
+| DELETE | `/api/custom-regions/{name}` | Remove a custom region |
+| GET | `/api/obs/audio/apps` | List capturable app windows (Windows, for commentary capture) |
 
 ### Health
 
@@ -186,13 +193,22 @@ Connect to `ws://localhost:8008/ws` for real-time events:
 
 ## Production Workflow
 
-1. **Input URLs** → Enter racer Twitch URLs in the Ingest panel
+The dashboard is laid out in the same order (steps 1–6 in the header):
+
+1. **Input URLs** → Enter racer Twitch URLs in the Ingest panel (use **+ / −** in the panel header to change the number of racer slots)
 2. **Start Feeds** → Dashboard triggers Streamlink pipelines
-3. **Apply Template** → Select a layout template to position sources
+3. **Layout Template** → Upload a background image **or click ➕ Blank for a layout without artwork**, draw per-racer regions and text, then Apply. Regions and text are rescaled to your OBS canvas resolution, and text renders in OBS exactly as previewed (same font size and position — no stretching)
 4. **Crop Feeds** → Drag-to-crop on the preview to isolate game/tracker regions
 5. **Sync Streams** → Nudge offsets with ±buttons until audio/video aligns
 6. **Share to Discord** → Open Projector, screen-share the window in Discord
-7. **Go Live** → Hit "Start Streaming" from the OBS panel
+7. **Go Live** → Hit "Start Stream" — the header shows a pulsing **LIVE** badge with timecode while streaming
+
+Notes:
+- The **Audio Mixer** lists only the sources in the current OBS scene (plus global audio) by default — untick *Current scene only* to see everything.
+- Text overlays are created with the platform's native OBS text source (GDI+ on Windows, FreeType2 elsewhere). Text supports fonts, multi-line (Shift+Enter) and left/center/right alignment, and the preview compensates for GDI's cell-height font sizing so the dashboard matches the OBS output.
+- **Custom regions**: add extra named crop regions (e.g. `deaths`) with *＋ Region* in the Crop Tool — they apply to every racer, can be drawn in templates, and are saved in presets.
+- **Region images**: in the Layout editor, attach an image to any region per racer (🖼 bar) — it previews in the editor and, on apply, is shown in OBS instead of that racer's live region (e.g. a tracker placeholder). Presets can carry per-channel images too (🖼 in the preset list).
+- **Fonts**: the text editor's font list can load your real installed fonts via *🔤 System Fonts* (Chrome/Edge). Fonts must also exist on the OBS machine; a ⚠ marks fonts this browser can't render, where the preview is approximate.
 
 ## Docker Deployment
 

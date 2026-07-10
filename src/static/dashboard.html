@@ -16,15 +16,32 @@
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
         header {
             background: linear-gradient(135deg, #0f3460, #533483);
-            padding: 16px 24px; display: flex; align-items: center; gap: 16px;
+            padding: 10px 24px; display: flex; align-items: center; gap: 16px;
+            position: sticky; top: 0; z-index: 100; flex-wrap: wrap;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.4);
         }
-        header h1 { font-size: 20px; font-weight: 700; }
-        header .ws-status { margin-left: auto; font-size: 12px; display: flex; align-items: center; gap: 6px; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        header h1 { font-size: 18px; font-weight: 700; white-space: nowrap; }
+        header nav { display: flex; gap: 2px; flex-wrap: wrap; }
+        header nav a { color: var(--text2); text-decoration: none; font-size: 12px; padding: 4px 10px; border-radius: 4px; }
+        header nav a:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+        .status-group { margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 12px; }
+        .status-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
         .dot.on { background: var(--green); } .dot.off { background: var(--red); }
+        .live-badge {
+            display: none; align-items: center; gap: 6px; background: #c62828; color: #fff;
+            font-weight: 700; font-size: 12px; padding: 3px 10px; border-radius: 12px;
+            animation: livepulse 2s ease-in-out infinite;
+        }
+        @keyframes livepulse { 50% { box-shadow: 0 0 10px rgba(244,67,54,0.8); } }
+        .live-badge .timecode { font-family: monospace; font-weight: 400; }
 
+        [id^="sec-"] { scroll-margin-top: 64px; }
         .top-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px 20px 0; max-width: 1800px; margin: 0 auto; }
-        .bottom-section { padding: 16px 20px 20px; max-width: 1800px; margin: 0 auto; }
+        .bottom-section { padding: 16px 20px 0; max-width: 1800px; margin: 0 auto; }
+        .bottom-section:last-of-type { padding-bottom: 24px; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 1100px) { .top-grid, .two-col { grid-template-columns: 1fr; } }
         .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
         .card-header { padding: 10px 16px; font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
         .card-header.green  { background: #2e7d3222; border-left: 3px solid var(--green); }
@@ -33,6 +50,7 @@
         .card-header.red    { background: #c6282822; border-left: 3px solid var(--red); }
         .card-header.teal   { background: #00796b22; border-left: 3px solid var(--teal); }
         .card-header.yellow { background: #f57f1722; border-left: 3px solid var(--yellow); }
+        .step { background: rgba(255,255,255,0.12); border-radius: 50%; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
         .card-body { padding: 12px 14px; }
         label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 3px; }
         input, select { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg3); color: var(--text); font-size: 13px; outline: none; margin-bottom: 8px; }
@@ -57,6 +75,7 @@
         .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .loading-overlay { position: absolute; inset: 0; background: rgba(30,30,46,0.75); display: none; align-items: center; justify-content: center; border-radius: var(--radius); z-index: 5; font-size: 13px; gap: 8px; color: var(--text); }
+        .hint { font-size: 11px; color: var(--text2); }
 
         /* Crop canvas */
         .crop-container { position: relative; margin-top: 8px; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; min-height: 200px; display: flex; align-items: center; justify-content: center; }
@@ -78,12 +97,13 @@
         .audio-btn.active { outline: 2px solid var(--green); outline-offset: 1px; }
 
         /* Audio Mixer */
+        .mixer-scroll { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; background: var(--bg3); }
         .mixer-strip { display:flex; align-items:center; gap:10px; padding:6px 8px; border-bottom:1px solid var(--border); }
         .mixer-strip:last-child { border-bottom:none; }
-        .mixer-strip .strip-name { width:120px; font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .mixer-strip input[type=range] { flex:1; min-width:80px; accent-color: var(--teal); }
+        .mixer-strip .strip-name { width:140px; font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mixer-strip input[type=range] { flex:1; min-width:80px; accent-color: var(--teal); margin: 0; padding: 0; }
         .mixer-strip .db-label { width:55px; font-family:monospace; font-size:11px; text-align:right; }
-        .mixer-strip .mute-btn { padding:2px 8px; font-size:14px; cursor:pointer; background:var(--bg3); border:1px solid var(--border); border-radius:4px; }
+        .mixer-strip .mute-btn { padding:2px 8px; font-size:14px; cursor:pointer; background:var(--bg2); border:1px solid var(--border); border-radius:4px; }
         .mixer-strip .mute-btn.muted { background:#c62828; color:#fff; }
 
         /* Crop input fields */
@@ -100,23 +120,41 @@
         .preset-row .name { font-weight: 600; flex: 1; }
         .preset-row .channel { color: var(--text2); }
         .preset-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; background: var(--bg3); }
+
+        /* Toasts */
+        #toasts { position: fixed; bottom: 16px; right: 16px; z-index: 200; display: flex; flex-direction: column; gap: 8px; max-width: 380px; }
+        .toast { background: #c62828; color: #fff; padding: 10px 14px; border-radius: 6px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); animation: toastin 0.2s ease-out; word-break: break-word; }
+        .toast.info { background: #1565c0; }
+        @keyframes toastin { from { transform: translateY(10px); opacity: 0; } }
     </style>
 </head>
 <body>
     <header>
-        <h1>🎮 ALttP Restream Dashboard</h1>
-        <div class="ws-status">
-            <span class="dot off" id="wsDot"></span>
-            <span id="wsText">WS Disconnected</span>
+        <h1>🎮 ALttP Restream</h1>
+        <nav>
+            <a href="#sec-ingest">1 Feeds</a>
+            <a href="#sec-obs">2 OBS</a>
+            <a href="#sec-layout">3 Layout</a>
+            <a href="#sec-crop">4 Crop</a>
+            <a href="#sec-audio">5 Audio</a>
+        </nav>
+        <div class="status-group">
+            <span class="live-badge" id="liveBadge">● LIVE <span class="timecode" id="liveTime">00:00:00</span></span>
+            <span class="status-item"><span class="dot off" id="obsDot"></span> <span id="obsText">OBS</span></span>
+            <span class="status-item"><span class="dot off" id="wsDot"></span> <span id="wsText">API</span></span>
         </div>
     </header>
 
     <div class="top-grid">
         <!-- LEFT: INGEST -->
-        <div class="card">
+        <section class="card" id="sec-ingest">
             <div class="card-header green">
-                Stream Ingest
-                <span style="font-size:11px;color:var(--text2);margin-left:auto" id="ingestSlotCount">2 Slots</span>
+                <span class="step">1</span> Stream Ingest
+                <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
+                    <button class="bb btn-sm" onclick="bumpSlots(-1)" title="Fewer racer slots">−</button>
+                    <span class="hint" id="ingestSlotCount">2 Slots</span>
+                    <button class="bb btn-sm" onclick="bumpSlots(1)" title="More racer slots">+</button>
+                </span>
             </div>
             <div class="card-body">
                 <!-- Twitch OAuth Token -->
@@ -133,42 +171,43 @@
                 <div id="ingestSlots"></div>
                 <div class="log" id="iLog"></div>
             </div>
-        </div>
+        </section>
 
-        <!-- RIGHT: OBS + Audio + Sync + Scene Preview -->
+        <!-- RIGHT: OBS + Scene Preview -->
         <div style="display:flex;flex-direction:column;gap:16px;">
-            <div class="card">
-                <div class="card-header red">OBS Control</div>
+            <section class="card" id="sec-obs">
+                <div class="card-header red"><span class="step">2</span> OBS Control</div>
                 <div class="card-body">
                     <div class="slot-box">
-                        <h4><span class="dot off" id="obsDot"></span> OBS WebSocket</h4>
+                        <h4><span class="dot off" id="obsCardDot"></span> OBS WebSocket</h4>
                         <div class="btn-group">
                             <button class="bp btn-sm" onclick="launchObs()">🚀 Launch OBS</button>
                             <button class="bg btn-sm" onclick="obsConn()">Connect</button>
                             <button class="br btn-sm" onclick="obsDisc()">Disconnect</button>
-                            <button class="bb btn-sm" onclick="obsInit()">🔄 Re-provision</button>
+                            <button class="bb btn-sm" onclick="obsInit()" title="Rebuild the Race Scene sources for all running feeds">🔄 Re-provision</button>
                         </div>
                     </div>
                     <label>Scene</label>
                     <div class="row">
                         <select id="scSel"></select>
                         <div style="flex:0"><button class="bb btn-sm" onclick="switchSc()">Switch</button></div>
-                        <div style="flex:0"><button class="bb btn-sm" onclick="loadSc()">↻</button></div>
+                        <div style="flex:0"><button class="bb btn-sm" onclick="loadSc()" title="Reload scene list">↻</button></div>
                     </div>
                     <div class="btn-group" style="margin-top:10px">
-                        <button class="bg" onclick="apiPost('/api/obs/stream/start').then(()=>logMsg($('#oLog'),'Stream started'))">▶ Start Stream</button>
-                        <button class="br" onclick="apiPost('/api/obs/stream/stop').then(()=>logMsg($('#oLog'),'Stream stopped'))">■ Stop Stream</button>
+                        <button class="bg" id="btnStreamStart" onclick="startStream()">▶ Start Stream</button>
+                        <button class="br" id="btnStreamStop" onclick="stopStream()" style="display:none">■ Stop Stream</button>
+                        <span class="hint" id="streamStats" style="align-self:center"></span>
                     </div>
                     <div class="log" id="oLog"></div>
                 </div>
-            </div>
+            </section>
 
             <!-- Scene Preview -->
-            <div class="card">
+            <section class="card">
                 <div class="card-header blue">Scene Preview</div>
                 <div class="card-body">
                     <img class="scene-preview-img" id="scenePreviewImg" style="display:none">
-                    <div style="font-size:12px;color:var(--text2);margin-bottom:6px" id="scenePreviewPlaceholder">Click refresh to capture the current OBS scene.</div>
+                    <div class="hint" style="margin-bottom:6px" id="scenePreviewPlaceholder">Click refresh to capture the current OBS scene.</div>
                     <div class="btn-group">
                         <button class="bb btn-sm" onclick="refreshScenePreview()">📷 Refresh</button>
                         <label style="margin:0;font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
@@ -176,119 +215,102 @@
                         </label>
                     </div>
                 </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header teal">Audio Mixer</div>
-                <div class="card-body">
-                    <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Solo a racer's audio (mutes all others):</div>
-                    <div class="btn-group" id="audioBtns"></div>
-                    <hr style="border-color:var(--border);margin:10px 0">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                        <span style="font-size:13px;font-weight:600">Per-Source Volume</span>
-                        <button class="bb btn-sm" onclick="refreshMixer()">🔄 Refresh</button>
-                    </div>
-                    <div id="mixerStrips" style="margin-bottom:10px"></div>
-                    <hr style="border-color:var(--border);margin:10px 0">
-                    <div style="font-size:13px;font-weight:600;margin-bottom:6px">🖥️ Discord Screen Share</div>
-                    <div style="font-size:11px;color:var(--text2);margin-bottom:6px">
-                        Opens an OBS projector window you can share to Discord.
-                    </div>
-                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-                        <select id="projectorRes" style="min-width:140px">
-                            <option value="0x0">Loading…</option>
-                        </select>
-                        <button class="bp btn-sm" onclick="openProjector()">📺 Open Projector</button>
-                    </div>
-                    <hr style="border-color:var(--border);margin:10px 0">
-                    <div style="font-size:13px;font-weight:600;margin-bottom:6px">🎙️ Commentary Audio Capture</div>
-                    <div id="audioCaptureDesc" style="font-size:11px;color:var(--text2);margin-bottom:6px">
-                        Captures Discord/commentary audio into OBS.
-                    </div>
-                    <!-- Application Audio Capture (Windows) -->
-                    <div id="appCaptureRow" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-                        <input id="appCaptureName" class="inline-input" style="flex:1;min-width:140px" value="Discord.exe" placeholder="e.g. Discord.exe">
-                        <button class="bt btn-sm" onclick="addDiscord()">Add Source</button>
-                    </div>
-                    <!-- Device Capture (Linux / macOS / fallback) -->
-                    <div id="deviceCaptureRow" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-                        <select id="discordDevice" style="flex:1;min-width:120px"><option value="default">Default</option></select>
-                        <button class="bt btn-sm" onclick="addDiscord()">Add Source</button>
-                        <button class="bb btn-sm" onclick="fetchDevices()">Scan Devices</button>
-                    </div>
-                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-                        <select id="monitorSelect" style="min-width:160px">
-                            <option value="OBS_MONITORING_TYPE_MONITOR_ONLY">Monitor Only (mute output)</option>
-                            <option value="OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT">Monitor &amp; Output</option>
-                            <option value="OBS_MONITORING_TYPE_NONE">Off</option>
-                        </select>
-                        <input id="monitorInputName" class="inline-input" style="width:120px!important" placeholder="Commentary" value="Commentary">
-                        <button class="by btn-sm" onclick="setMonitorType()">Set Monitoring</button>
-                    </div>
-                    <hr style="border-color:var(--border);margin:10px 0">
-                    <details style="font-size:11px;color:var(--text2)">
-                        <summary style="cursor:pointer;font-weight:600;color:var(--text);font-size:12px;margin-bottom:4px">📖 Discord Sharing Guide</summary>
-                        <ol style="padding-left:16px;line-height:1.8">
-                            <li>Click <b>Open Projector</b> above — OBS opens a resizable window showing your scene.</li>
-                            <li>In Discord, join a voice channel and click <b>Screen → Window</b>, then pick the OBS projector window.</li>
-                            <li>To capture Discord audio into OBS: click <b>Scan Devices</b>, select the audio output device Discord uses, then <b>Add Source</b>.</li>
-                            <li>Set monitoring to <b>Monitor Only (mute output)</b> so commentary goes into OBS but doesn't echo back.</li>
-                        </ol>
-                    </details>
-                    <div class="log" id="aLog"></div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header purple">Sync Nudger</div>
-                <div class="card-body">
-                    <div class="btn-group" style="margin-bottom:8px" id="syncBtns"></div>
-                    <div style="font-size:13px;margin-bottom:4px">Target: <b id="sTarget">Racer1_Feed</b> — Delay: <b id="sDelay">0 ms</b></div>
-                    <div class="nudge-grid" style="grid-template-columns:repeat(4,1fr)">
-                        <button class="br btn-sm" onclick="nudge(-5000)">−5s</button>
-                        <button class="br btn-sm" onclick="nudge(-1000)">−1s</button>
-                        <button class="br btn-sm" onclick="nudge(-500)">−500ms</button>
-                        <button class="br btn-sm" onclick="nudge(-100)">−100ms</button>
-                        <button class="bg btn-sm" onclick="nudge(100)">+100ms</button>
-                        <button class="bg btn-sm" onclick="nudge(500)">+500ms</button>
-                        <button class="bg btn-sm" onclick="nudge(1000)">+1s</button>
-                        <button class="bg btn-sm" onclick="nudge(5000)">+5s</button>
-                    </div>
-                    <div class="row" style="margin-top:8px;align-items:center">
-                        <div style="flex:0 0 auto"><label style="margin:0">Custom (ms):</label></div>
-                        <div><input class="inline-input" type="number" id="nudgeCustom" value="1000" step="100"></div>
-                        <div style="flex:0"><button class="br btn-sm" onclick="nudge(-parseInt($('#nudgeCustom').value)||0)">−</button></div>
-                        <div style="flex:0"><button class="bg btn-sm" onclick="nudge(parseInt($('#nudgeCustom').value)||0)">+</button></div>
-                        <div style="flex:0"><button class="bb btn-sm" onclick="resetSync()">Reset</button></div>
-                    </div>
-                    <div class="log" id="sLog"></div>
-                </div>
-            </div>
+            </section>
         </div>
     </div>
 
-    <!-- CROP TOOL (full width) -->
+    <!-- TEMPLATE EDITOR (full width) -->
     <div class="bottom-section">
-        <div class="card">
+        <section class="card" id="sec-layout">
+            <div class="card-header purple"><span class="step">3</span> Layout Template
+                <span class="hint" style="margin-left:auto">Where each racer's game, tracker, timer and text go on the stream canvas</span>
+            </div>
+            <div class="card-body">
+                <div class="row" style="margin-bottom:8px">
+                    <div><label>Template Name</label><input id="tplName" placeholder="My Layout Template"></div>
+                    <div><label>Background Image <span style="font-size:10px;text-transform:none">(optional)</span></label><input type="file" id="tplFile" accept=".jpg,.jpeg,.png,.webp" style="padding:4px"></div>
+                    <div style="flex:0;padding-top:16px"><button class="bp btn-sm" onclick="uploadTemplate()" title="Create a template from the selected image">📤 Upload</button></div>
+                    <div style="flex:0;padding-top:16px"><button class="bt btn-sm" onclick="createBlankTemplate()" title="Create a template without a background image">➕ Blank</button></div>
+                </div>
+                <div class="row" style="margin-bottom:8px">
+                    <div>
+                        <label>Saved Templates</label>
+                        <select id="tplSelect" onchange="loadTemplate()"><option value="">— Select —</option></select>
+                    </div>
+                    <div style="flex:0;padding-top:16px"><button class="bb btn-sm" onclick="refreshTemplates()">↻</button></div>
+                    <div style="flex:0;padding-top:16px"><button class="br btn-sm" onclick="deleteTemplate()">🗑</button></div>
+                </div>
+                <div class="hint" style="margin-bottom:6px">
+                    Draw placement regions for each player slot. Drag existing regions to move them, drag corners to resize. Changes save automatically.
+                </div>
+                <!-- Player slot selector -->
+                <div class="btn-group" style="margin-bottom:8px">
+                    <span class="hint" style="margin-right:4px;display:flex;align-items:center">Slot:</span>
+                    <div id="tplSlotBtns"></div>
+                    <button class="bg btn-sm" onclick="addTplSlot()" title="Add player slot">+ Add Slot</button>
+                    <button class="br btn-sm" onclick="removeTplSlot()" title="Remove last slot">− Remove</button>
+                </div>
+                <div class="btn-group" style="margin-bottom:8px">
+                    <span id="tplModeBtns" style="display:contents"></span>
+                    <span style="width:1px;background:var(--border);margin:0 4px"></span>
+                    <button class="bp btn-sm" onclick="applyTemplateToOBS()">✓ Apply Layout to OBS</button>
+                    <button class="br btn-sm" onclick="clearTplRegion()">✕ Clear Region</button>
+                </div>
+                <!-- Region image bar (visible when a region mode is active) -->
+                <div id="tplRegionImgBar" style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;padding:8px;background:var(--bg3);align-items:center;gap:8px;flex-wrap:wrap">
+                    <span style="font-size:12px;font-weight:600" id="tplRegionImgLabel">🖼 Image for R1 · Game:</span>
+                    <span class="hint" id="tplRegionImgName">none</span>
+                    <input type="file" id="tplRegionImgFile" accept=".jpg,.jpeg,.png,.webp" style="width:auto;margin:0;padding:2px;font-size:11px">
+                    <button class="bt btn-sm" onclick="uploadTplRegionImage()">Attach</button>
+                    <button class="br btn-sm" onclick="removeTplRegionImage()">Remove</button>
+                    <span class="hint">Shown instead of this racer's live region (e.g. tracker placeholder) — previewed here, placed on apply.</span>
+                </div>
+                <!-- Text element editor (visible when text mode active) -->
+                <div id="tplTextEditor" style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;padding:8px;background:var(--bg3)">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+                        <span style="font-size:12px;font-weight:600;color:var(--teal)">Text Elements</span>
+                        <button class="bt btn-sm" onclick="addTplText()">+ Add Text</button>
+                        <button class="bb btn-sm" id="btnLoadFonts" onclick="loadSystemFonts(true)" title="List this browser's installed fonts (Chrome/Edge)">🔤 System Fonts</button>
+                        <span class="hint">Rendered as OBS shows it — drag to move. Enter applies, Shift+Enter adds a line. Alignment needs Windows OBS (GDI+). Fonts must exist on the OBS machine; ⚠ marks fonts this browser can't preview.</span>
+                    </div>
+                    <div id="tplTextList"></div>
+                </div>
+                <div class="crop-container" id="tplContainer" style="min-height:100px">
+                    <div class="crop-placeholder" id="tplPlaceholder">Upload an image, or click ➕ Blank for a layout without artwork.</div>
+                    <canvas id="tplCanvas" style="display:none;cursor:crosshair"></canvas>
+                </div>
+                <div class="crop-legend" id="tplLegend" style="margin-top:6px"></div>
+                <div class="coords-bar" id="tplCoordsBar" style="margin-top:4px">
+                    <span id="tplSlotInfo">Slot 0 (Racer 1)</span>
+                    <span id="tplCanvasInfo"></span>
+                </div>
+                <div class="log" id="tLog"></div>
+            </div>
+        </section>
+    </div>
+
+    <!-- CROP TOOL + PRESETS (full width) -->
+    <div class="bottom-section">
+        <section class="card" id="sec-crop">
             <div class="card-header blue">
-                Crop Tool
-                <span style="font-size:11px;color:var(--text2);margin-left:auto" id="dSlotLabel">Racer 1</span>
+                <span class="step">4</span> Crop Tool
+                <span class="hint" style="margin-left:auto">Cut the game / tracker / timer out of each racer's stream — <b id="dSlotLabel">Racer 1</b></span>
             </div>
             <div class="card-body">
                 <div class="btn-group" style="margin-bottom:8px">
                     <span id="cropSlotBtns" style="display:contents"></span>
                     <span style="width:1px;background:var(--border);margin:0 4px"></span>
-                    <button class="bg btn-sm btn-active" id="cropModeGame" onclick="setCropMode('game')">🎮 Game</button>
-                    <button class="bp btn-sm" id="cropModeTracker" onclick="setCropMode('tracker')">📊 Tracker</button>
-                    <button class="by btn-sm" id="cropModeTimer" onclick="setCropMode('timer')">⏱ Timer</button>
+                    <span id="cropModeBtns" style="display:contents"></span>
+                    <button class="bt btn-sm" onclick="addCustomRegion()" title="Add a custom named region (shared by all racers)">＋ Region</button>
+                    <button class="br btn-sm" onclick="removeCustomRegion()" title="Remove a custom region">－ Region</button>
                     <span style="width:1px;background:var(--border);margin:0 4px"></span>
                     <button class="bb btn-sm" onclick="refreshCropPreview()">📷 Refresh</button>
-                    <button class="bp btn-sm" onclick="applyAllCrops()">✓ Apply to OBS</button>
+                    <button class="bp btn-sm" onclick="applyAllCrops()" title="Applies every racer's drawn regions">✓ Apply Crops to OBS</button>
                     <button class="br btn-sm" onclick="clearCropRegion()">✕ Clear Region</button>
                 </div>
 
                 <div style="display:flex;gap:12px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
-                    <span style="font-size:12px;color:var(--text2)">Mode: <b id="cropModeLabel" style="color:var(--green)">Game</b></span>
+                    <span class="hint">Mode: <b id="cropModeLabel" style="color:var(--green)">Game</b></span>
                     <label style="margin:0;font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;margin-left:auto">
                         <input type="checkbox" id="magToggle" checked style="width:auto;margin:0"> Magnifier
                     </label>
@@ -312,27 +334,16 @@
                     <div class="magnifier" id="magnifier"><div class="magnifier-xhair"></div></div>
                 </div>
 
-                <div class="crop-legend">
-                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(0,255,0,0.5)"></div> Game</div>
-                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(180,0,255,0.5)"></div> Tracker</div>
-                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(255,200,0,0.5)"></div> Timer</div>
-                </div>
+                <div class="crop-legend" id="cropLegend"></div>
                 <div class="coords-bar" id="coordsBar">
                     <span id="coordsCursor">Cursor: —</span>
-                    <span id="coordsGame">Game: —</span>
-                    <span id="coordsTracker">Tracker: —</span>
-                    <span id="coordsTimer">Timer: —</span>
+                    <span id="coordsRegions" style="display:contents"></span>
                 </div>
                 <div class="log" id="cLog"></div>
-            </div>
-        </div>
-    </div>
 
-    <!-- PRESETS (full width) -->
-    <div class="bottom-section" style="padding-top:0">
-        <div class="card">
-            <div class="card-header yellow">Crop Presets</div>
-            <div class="card-body">
+                <!-- Crop presets (per-channel saved crops) -->
+                <hr style="border-color:var(--border);margin:12px 0">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px">💾 Crop Presets <span class="hint" style="font-weight:400">— save the current racer's crop regions for reuse</span></div>
                 <div class="row" style="margin-bottom:8px">
                     <div><label>Channel</label><input id="presetChannel" placeholder="racer_name"></div>
                     <div><label>Preset Name</label><input id="presetName" placeholder="Default Layout"></div>
@@ -346,71 +357,108 @@
                     <div style="padding:12px;color:var(--text2);font-size:12px;text-align:center">No presets saved yet.</div>
                 </div>
             </div>
-        </div>
+        </section>
     </div>
 
-    <!-- TEMPLATE EDITOR (full width) -->
-    <div class="bottom-section" style="padding-top:0">
-        <div class="card">
-            <div class="card-header purple">Template Editor</div>
+    <!-- AUDIO + SYNC (two columns) -->
+    <div class="bottom-section two-col" id="sec-audio">
+        <section class="card">
+            <div class="card-header teal"><span class="step">5</span> Audio Mixer</div>
             <div class="card-body">
-                <div class="row" style="margin-bottom:8px">
-                    <div><label>Template Name</label><input id="tplName" placeholder="My Layout Template"></div>
-                    <div><label>Upload Image</label><input type="file" id="tplFile" accept=".jpg,.jpeg,.png,.webp" style="padding:4px"></div>
-                    <div style="flex:0;padding-top:16px"><button class="bp btn-sm" onclick="uploadTemplate()">📤 Upload</button></div>
+                <div class="hint" style="margin-bottom:6px">Solo a racer's audio (mutes all others):</div>
+                <div class="btn-group" id="audioBtns"></div>
+                <hr style="border-color:var(--border);margin:10px 0">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px">
+                    <span style="font-size:13px;font-weight:600">Per-Source Volume <span class="hint" id="mixerScene" style="font-weight:400"></span></span>
+                    <span style="display:flex;gap:8px;align-items:center">
+                        <label style="margin:0;font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;text-transform:none">
+                            <input type="checkbox" id="mixerSceneOnly" checked style="width:auto;margin:0" onchange="refreshMixer()"> Current scene only
+                        </label>
+                        <button class="bb btn-sm" onclick="refreshMixer()">🔄 Refresh</button>
+                    </span>
                 </div>
-                <div class="row" style="margin-bottom:8px">
-                    <div>
-                        <label>Saved Templates</label>
-                        <select id="tplSelect" onchange="loadTemplate()"><option value="">— Select —</option></select>
-                    </div>
-                    <div style="flex:0;padding-top:16px"><button class="bb btn-sm" onclick="refreshTemplates()">↻</button></div>
-                    <div style="flex:0;padding-top:16px"><button class="br btn-sm" onclick="deleteTemplate()">🗑</button></div>
+                <div class="mixer-scroll" style="margin-bottom:10px"><div id="mixerStrips"></div></div>
+                <hr style="border-color:var(--border);margin:10px 0">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px">🖥️ Discord Screen Share</div>
+                <div class="hint" style="margin-bottom:6px">
+                    Opens an OBS projector window you can share to Discord.
                 </div>
-                <div style="font-size:12px;color:var(--text2);margin-bottom:6px">
-                    Draw placement regions for each player slot. Drag existing regions to move them, drag corners to resize.
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+                    <select id="projectorRes" style="min-width:140px">
+                        <option value="0x0">Loading…</option>
+                    </select>
+                    <button class="bp btn-sm" onclick="openProjector()">📺 Open Projector</button>
                 </div>
-                <!-- Player slot selector -->
-                <div class="btn-group" style="margin-bottom:8px">
-                    <span style="font-size:12px;color:var(--text2);margin-right:4px;display:flex;align-items:center">Slot:</span>
-                    <div id="tplSlotBtns"></div>
-                    <button class="bg btn-sm" onclick="addTplSlot()" title="Add player slot">+ Add Slot</button>
-                    <button class="br btn-sm" onclick="removeTplSlot()" title="Remove last slot">− Remove</button>
+                <hr style="border-color:var(--border);margin:10px 0">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px">🎙️ Commentary Audio Capture</div>
+                <div id="audioCaptureDesc" class="hint" style="margin-bottom:6px">
+                    Captures Discord/commentary audio into OBS.
                 </div>
-                <div class="btn-group" style="margin-bottom:8px">
-                    <button class="bg btn-sm btn-active" id="tplModeGame" onclick="setTplMode('game')">🎮 Game</button>
-                    <button class="bp btn-sm" id="tplModeTracker" onclick="setTplMode('tracker')">📊 Tracker</button>
-                    <button class="by btn-sm" id="tplModeTimer" onclick="setTplMode('timer')">⏱ Timer</button>
-                    <button class="bt btn-sm" id="tplModeText" onclick="setTplMode('text')">📝 Text</button>
-                    <span style="width:1px;background:var(--border);margin:0 4px"></span>
-                    <button class="bp btn-sm" onclick="applyTemplateToOBS()">✓ Apply to OBS</button>
-                    <button class="br btn-sm" onclick="clearTplRegion()">✕ Clear Region</button>
+                <!-- Application Audio Capture (Windows only) -->
+                <div id="appCaptureRow" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+                    <select id="appCaptureSel" style="flex:1;min-width:140px"><option value="">— scan for apps —</option></select>
+                    <button class="bt btn-sm" onclick="addDiscord(true)">Add App Source</button>
+                    <button class="bb btn-sm" onclick="fetchApps()">↻ Apps</button>
                 </div>
-                <!-- Text element editor (visible when text mode active) -->
-                <div id="tplTextEditor" style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;padding:8px;background:var(--bg3)">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-                        <span style="font-size:12px;font-weight:600;color:var(--teal)">Text Elements</span>
-                        <button class="bt btn-sm" onclick="addTplText()">+ Add Text</button>
-                    </div>
-                    <div id="tplTextList"></div>
-                    <div style="font-size:11px;color:var(--text2);margin-top:4px">Drag to move elements. Drag corners to resize.</div>
+                <!-- Device Capture (all platforms) -->
+                <div id="deviceCaptureRow" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+                    <select id="discordDevice" style="flex:1;min-width:120px"><option value="default">Default</option></select>
+                    <button class="bt btn-sm" onclick="addDiscord(false)">Add Device Source</button>
+                    <button class="bb btn-sm" onclick="fetchDevices()">Scan Devices</button>
                 </div>
-                <div class="crop-container" id="tplContainer" style="min-height:100px">
-                    <div class="crop-placeholder" id="tplPlaceholder">Upload or select a template to start drawing regions.</div>
-                    <canvas id="tplCanvas" style="display:none;cursor:crosshair"></canvas>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                    <select id="monitorSelect" style="min-width:160px">
+                        <option value="OBS_MONITORING_TYPE_MONITOR_ONLY">Monitor Only (mute output)</option>
+                        <option value="OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT">Monitor &amp; Output</option>
+                        <option value="OBS_MONITORING_TYPE_NONE">Off</option>
+                    </select>
+                    <input id="monitorInputName" class="inline-input" style="width:120px!important" placeholder="Commentary" value="Commentary">
+                    <button class="by btn-sm" onclick="setMonitorType()">Set Monitoring</button>
                 </div>
-                <div class="crop-legend" style="margin-top:6px">
-                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(0,255,0,0.5)"></div> Game</div>
-                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(180,0,255,0.5)"></div> Tracker</div>
-                    <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:rgba(255,200,0,0.5)"></div> Timer</div>
-                </div>
-                <div class="coords-bar" id="tplCoordsBar" style="margin-top:4px">
-                    <span id="tplSlotInfo">Slot 0 (Racer 1)</span>
-                </div>
-                <div class="log" id="tLog"></div>
+                <hr style="border-color:var(--border);margin:10px 0">
+                <details class="hint">
+                    <summary style="cursor:pointer;font-weight:600;color:var(--text);font-size:12px;margin-bottom:4px">📖 Discord Sharing Guide</summary>
+                    <ol style="padding-left:16px;line-height:1.8">
+                        <li>Click <b>Open Projector</b> above — OBS opens a resizable window showing your scene.</li>
+                        <li>In Discord, join a voice channel and click <b>Screen → Window</b>, then pick the OBS projector window.</li>
+                        <li>To capture Discord audio into OBS: click <b>Scan Devices</b>, select the audio output device Discord uses, then <b>Add Source</b>.</li>
+                        <li>Set monitoring to <b>Monitor Only (mute output)</b> so commentary goes into OBS but doesn't echo back.</li>
+                    </ol>
+                </details>
+                <div class="log" id="aLog"></div>
             </div>
-        </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header purple"><span class="step">6</span> Sync Nudger
+                <span class="hint" style="margin-left:auto">Delay the faster feed until both racers match</span>
+            </div>
+            <div class="card-body">
+                <div class="btn-group" style="margin-bottom:8px" id="syncBtns"></div>
+                <div style="font-size:13px;margin-bottom:4px">Target: <b id="sTarget">Racer1_Feed</b> — Delay: <b id="sDelay">0 ms</b></div>
+                <div class="nudge-grid" style="grid-template-columns:repeat(4,1fr)">
+                    <button class="br btn-sm" onclick="nudge(-5000)">−5s</button>
+                    <button class="br btn-sm" onclick="nudge(-1000)">−1s</button>
+                    <button class="br btn-sm" onclick="nudge(-500)">−500ms</button>
+                    <button class="br btn-sm" onclick="nudge(-100)">−100ms</button>
+                    <button class="bg btn-sm" onclick="nudge(100)">+100ms</button>
+                    <button class="bg btn-sm" onclick="nudge(500)">+500ms</button>
+                    <button class="bg btn-sm" onclick="nudge(1000)">+1s</button>
+                    <button class="bg btn-sm" onclick="nudge(5000)">+5s</button>
+                </div>
+                <div class="row" style="margin-top:8px;align-items:center">
+                    <div style="flex:0 0 auto"><label style="margin:0">Custom (ms):</label></div>
+                    <div><input class="inline-input" type="number" id="nudgeCustom" value="1000" step="100"></div>
+                    <div style="flex:0"><button class="br btn-sm" onclick="nudge(-parseInt($('#nudgeCustom').value)||0)">−</button></div>
+                    <div style="flex:0"><button class="bg btn-sm" onclick="nudge(parseInt($('#nudgeCustom').value)||0)">+</button></div>
+                    <div style="flex:0"><button class="bb btn-sm" onclick="resetSync()">Reset</button></div>
+                </div>
+                <div class="log" id="sLog"></div>
+            </div>
+        </section>
     </div>
+
+    <div id="toasts"></div>
 
 <script>
 /* ================================================================
@@ -418,41 +466,61 @@
    ================================================================ */
 const API = location.origin;
 const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const logMsg = (el, m) => {
     if (!el) return;
     const t = new Date().toLocaleTimeString();
     el.textContent += `[${t}] ${m}\n`;
     el.scrollTop = el.scrollHeight;
 };
+function toast(msg, kind='error') {
+    const box = document.createElement('div');
+    box.className = `toast ${kind}`;
+    box.textContent = msg;
+    $('#toasts').appendChild(box);
+    setTimeout(() => box.remove(), 6000);
+}
+// Surface errors from fire-and-forget button handlers instead of losing them
+window.addEventListener('unhandledrejection', e => {
+    toast(e.reason && e.reason.message ? e.reason.message : 'Unexpected error');
+});
+async function apiRaise(r, p) {
+    if (r.ok) return r.json();
+    let detail = `HTTP ${r.status}`;
+    try { const j = await r.json(); detail = j.detail || j.error || detail; } catch {}
+    throw new Error(`${p}: ${detail}`);
+}
 async function apiPost(p, b={}) {
     const r = await fetch(API+p, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-    if (!r.ok) throw new Error(`${p}: ${r.status}`);
-    return r.json();
+    return apiRaise(r, p);
 }
 async function apiGet(p) {
     const r = await fetch(API+p);
-    if (!r.ok) throw new Error(`${p}: ${r.status}`);
-    return r.json();
+    return apiRaise(r, p);
 }
 async function apiDelete(p) {
     const r = await fetch(API+p, {method:'DELETE'});
-    if (!r.ok) throw new Error(`${p}: ${r.status}`);
-    return r.json();
+    return apiRaise(r, p);
 }
 async function apiPut(p, b={}) {
     const r = await fetch(API+p, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-    if (!r.ok) throw new Error(`${p}: ${r.status}`);
-    return r.json();
+    return apiRaise(r, p);
 }
 function showLoading(id, msg) {
     const el = document.getElementById(id); if (!el) return;
-    el.innerHTML = `<div class="spinner"></div> ${msg}`;
+    el.innerHTML = `<div class="spinner"></div> ${esc(msg)}`;
     el.style.display = 'flex';
 }
 function hideLoading(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+function setObsDot(on) {
+    $('#obsDot').className = `dot ${on?'on':'off'}`;
+    const cardDot = $('#obsCardDot'); if (cardDot) cardDot.className = `dot ${on?'on':'off'}`;
+    $('#obsText').textContent = on ? 'OBS Connected' : 'OBS';
+    if (!on) updateStreamStatusUI({ active: false });
+}
 
 /* ================================================================
-   GLOBAL SLOT COUNT — driven by active template
+   GLOBAL SLOT COUNT — set manually or driven by the active template
    ================================================================ */
 let numSlots = 2;
 let cropRegions = {};
@@ -462,15 +530,21 @@ function ensureCropSlot(s) {
 }
 
 function setNumSlots(n) {
-    numSlots = Math.max(1, n);
+    numSlots = Math.max(1, Math.min(8, n));
     for (let i = 0; i < numSlots; i++) ensureCropSlot(i);
+    if (ingestTab >= numSlots) ingestTab = numSlots - 1;
+    if (cropSlot >= numSlots) { cropSlot = numSlots - 1; $('#dSlotLabel').textContent = `Racer ${cropSlot+1}`; }
+    if (syncSlot >= numSlots) { syncSlot = numSlots - 1; $('#sTarget').textContent = `Racer${syncSlot+1}_Feed`; }
     renderIngestTabs();
     renderCropSlotBtns();
     renderAudioBtns();
     refreshMixer();
     renderSyncBtns();
-    document.getElementById('ingestSlotCount').textContent = `${numSlots} Slots`;
+    document.getElementById('ingestSlotCount').textContent = `${numSlots} Slot${numSlots===1?'':'s'}`;
+    try { localStorage.setItem('numSlots', String(numSlots)); } catch {}
 }
+
+function bumpSlots(d) { setNumSlots(numSlots + d); }
 
 /* ================================================================
    DYNAMIC RENDERERS
@@ -481,22 +555,43 @@ function renderIngestTabs() {
     const tabs = document.getElementById('ingestTabs');
     const container = document.getElementById('ingestSlots');
     if (!tabs || !container) return;
+    // Preserve anything the user already typed before re-rendering
+    const saved = {};
+    for (const box of container.querySelectorAll('.slot-box')) {
+        const i = box.dataset.slot;
+        saved[i] = {
+            url: box.querySelector(`#u${i}`)?.value || '',
+            qualities: [...(box.querySelector(`#q${i}`)?.options || [])].map(o => o.value),
+            quality: box.querySelector(`#q${i}`)?.value || 'best',
+            offset: box.querySelector(`#t${i}`)?.value || '',
+            dot: box.querySelector(`#d${i}`)?.className || 'dot off',
+            prevSrc: box.querySelector(`#prev${i}`)?.src || '',
+            prevShown: box.querySelector(`#prev${i}`)?.style.display === 'block',
+            prevInfo: box.querySelector(`#prevInfo${i}`)?.textContent || '',
+        };
+    }
     tabs.innerHTML = '';
     container.innerHTML = '';
     for (let i = 0; i < numSlots; i++) {
         const btn = document.createElement('button');
         btn.className = `bg btn-sm${i === ingestTab ? ' btn-active' : ''}`;
-        btn.textContent = `Racer ${i + 1}`;
         btn.id = `ingestTab${i}`;
         btn.onclick = () => switchIngestTab(i);
+        const dot = document.createElement('span');
+        dot.className = saved[i] ? saved[i].dot : 'dot off';
+        dot.id = `tabDot${i}`;
+        dot.style.marginRight = '5px';
+        btn.appendChild(dot);
+        btn.appendChild(document.createTextNode(`Racer ${i + 1}`));
         tabs.appendChild(btn);
 
         const box = document.createElement('div');
         box.className = 'slot-box';
         box.id = `slotBox${i}`;
+        box.dataset.slot = i;
         box.style.display = i === ingestTab ? 'block' : 'none';
         box.innerHTML = `
-            <div class="loading-overlay" id="load${i}"><div class="spinner"></div> Starting\u2026</div>
+            <div class="loading-overlay" id="load${i}"><div class="spinner"></div> Starting…</div>
             <h4><span class="dot off" id="d${i}"></span> Racer ${i + 1}</h4>
             <label>URL</label>
             <input id="u${i}" placeholder="twitch.tv/racer${i+1} or twitch.tv/videos/123?t=1h0m28s">
@@ -506,21 +601,42 @@ function renderIngestTabs() {
                         <select id="q${i}" style="flex:1;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px">
                             <option value="best" selected>best</option>
                         </select>
-                        <button class="bb btn-sm" onclick="fetchQualities(${i})" id="qBtn${i}" style="white-space:nowrap">\ud83d\udd0d Fetch</button>
+                        <button class="bb btn-sm" onclick="fetchQualities(${i})" id="qBtn${i}" style="white-space:nowrap">🔍 Fetch</button>
                     </div>
                 </div>
                 <div style="flex:1"><label>VOD Start Time</label><input id="t${i}" placeholder="e.g. 1h5m30s or 00:05:30 or 330"></div>
             </div>
             <div class="btn-group">
-                <button class="bg btn-sm" onclick="startF(${i})">\u25b6 Start</button>
-                <button class="br btn-sm" onclick="stopF(${i})">\u25a0 Stop</button>
-                <button class="br btn-sm" onclick="reconnectF(${i})">\u21bb Reconnect</button>
-                <button class="bb btn-sm" onclick="refreshPreview(${i})">\ud83d\udcf7 Preview</button>
+                <button class="bg btn-sm" onclick="startF(${i})">▶ Start</button>
+                <button class="br btn-sm" onclick="stopF(${i})">■ Stop</button>
+                <button class="br btn-sm" onclick="reconnectF(${i})">↻ Reconnect</button>
+                <button class="bb btn-sm" onclick="refreshPreview(${i})">📷 Preview</button>
             </div>
             <img class="preview-img" id="prev${i}">
             <div class="preview-label" id="prevInfo${i}"></div>
         `;
         container.appendChild(box);
+
+        const s = saved[i];
+        if (s) {
+            box.querySelector(`#u${i}`).value = s.url;
+            const qSel = box.querySelector(`#q${i}`);
+            for (const q of s.qualities) {
+                if (![...qSel.options].some(o => o.value === q)) {
+                    const opt = document.createElement('option');
+                    opt.value = q; opt.textContent = q;
+                    qSel.appendChild(opt);
+                }
+            }
+            qSel.value = s.quality;
+            box.querySelector(`#t${i}`).value = s.offset;
+            box.querySelector(`#d${i}`).className = s.dot;
+            if (s.prevShown && s.prevSrc) {
+                const img = box.querySelector(`#prev${i}`);
+                img.src = s.prevSrc; img.style.display = 'block';
+            }
+            box.querySelector(`#prevInfo${i}`).textContent = s.prevInfo;
+        }
     }
 }
 
@@ -556,13 +672,13 @@ function renderAudioBtns() {
         const btn = document.createElement('button');
         btn.className = 'bg audio-btn btn-sm';
         btn.id = `audioBtn${i}`;
-        btn.textContent = `\ud83d\udd0a Solo Racer ${i + 1}`;
+        btn.textContent = `🔊 Solo Racer ${i + 1}`;
         btn.onclick = () => switchAudio(i);
         container.appendChild(btn);
     }
     const mute = document.createElement('button');
     mute.className = 'br audio-btn btn-sm';
-    mute.textContent = '\ud83d\udd07 Mute All';
+    mute.textContent = '🔇 Mute All';
     mute.onclick = muteAll;
     container.appendChild(mute);
 }
@@ -573,7 +689,8 @@ function renderSyncBtns() {
     container.innerHTML = '';
     for (let i = 0; i < numSlots; i++) {
         const btn = document.createElement('button');
-        btn.className = 'bb btn-sm';
+        btn.className = `bb btn-sm${i === syncSlot ? ' btn-active' : ''}`;
+        btn.id = `syncBtn${i}`;
         btn.textContent = `Racer ${i + 1}`;
         btn.onclick = () => selSync(i);
         container.appendChild(btn);
@@ -586,8 +703,8 @@ function renderSyncBtns() {
 let ws;
 function wsConnect() {
     ws = new WebSocket(API.replace(/^http/,'ws')+'/ws');
-    ws.onopen = () => { $('#wsDot').className='dot on'; $('#wsText').textContent='WS Connected'; };
-    ws.onclose = () => { $('#wsDot').className='dot off'; $('#wsText').textContent='WS Disconnected'; setTimeout(wsConnect,3000); };
+    ws.onopen = () => { $('#wsDot').className='dot on'; $('#wsText').textContent='API Connected'; };
+    ws.onclose = () => { $('#wsDot').className='dot off'; $('#wsText').textContent='API'; setTimeout(wsConnect,3000); };
     ws.onmessage = e => { try { const m=JSON.parse(e.data); handleEvent(m.event,m.data); } catch{} };
 }
 wsConnect();
@@ -595,26 +712,63 @@ function handleEvent(ev, d) {
     if (ev==='ingest:started') { setDot(d.slot, true); const el = document.getElementById(`u${d.slot}`); if (el && d.url) el.value = d.url; }
     if (ev==='ingest:stopped') setDot(d.slot, false);
     if (ev==='ingest:reconnecting') {
-        logMsg($('#iLog'), `⚠ Slot ${d.slot}: stream interrupted, reconnecting (attempt ${d.attempt}, ${d.delay}s)…`);
+        logMsg($('#iLog'), `⚠ Racer ${d.slot+1}: stream interrupted, reconnecting (attempt ${d.attempt}, ${d.delay}s)…`);
         setDot(d.slot, false);
     }
     if (ev==='ingest:reconnected') {
-        logMsg($('#iLog'), `✓ Slot ${d.slot}: reconnected successfully`);
+        logMsg($('#iLog'), `✓ Racer ${d.slot+1}: reconnected successfully`);
         setDot(d.slot, true);
         const el = document.getElementById(`u${d.slot}`); if (el && d.url) el.value = d.url;
     }
     if (ev==='ingest:reconnect_failed') {
-        logMsg($('#iLog'), `✗ Slot ${d.slot}: reconnect failed after ${d.attempts} attempts`);
+        logMsg($('#iLog'), `✗ Racer ${d.slot+1}: reconnect failed after ${d.attempts} attempts`);
+        toast(`Racer ${d.slot+1}: feed reconnect gave up after ${d.attempts} attempts`);
     }
-    if (ev==='obs:connected')  { $('#obsDot').className='dot on'; loadSc(); populateProjectorRes(); apiGet('/api/obs/status').then(s => updateAudioCaptureUI(s.platform)).catch(()=>{}); }
-    if (ev==='obs:disconnected') $('#obsDot').className='dot off';
+    if (ev==='obs:connected')  { setObsDot(true); loadSc(); populateProjectorRes(); updateStreamStatus(); syncAudioSoloState(); refreshSyncDelay(); apiGet('/api/obs/status').then(applyObsStatus).catch(()=>{}); }
+    if (ev==='obs:disconnected') setObsDot(false);
     if (ev==='audio:switched') { updateAudioUI(d.active_slot); refreshMixer(); }
     if (ev==='audio:volume' || ev==='audio:mute') refreshMixer();
     if (ev==='obs:source_created') logMsg($('#oLog'), `Auto-created source: ${d.source}`);
+    if (ev==='stream:started' || ev==='stream:stopped') updateStreamStatus();
+    if (ev==='regions:changed') { customRegions = d.regions || []; renderRegionUI(); }
     if (ev==='template:applied') {
         logMsg($('#tLog'), `Template "${d.template_name}" applied: ${(d.applied||[]).join(', ')}`);
         if (d.num_slots) setNumSlots(d.num_slots);
     }
+}
+
+/* ================================================================
+   STREAM STATUS (header LIVE badge)
+   ================================================================ */
+function updateStreamStatusUI(st) {
+    const live = !!st.active;
+    $('#liveBadge').style.display = live ? 'inline-flex' : 'none';
+    $('#btnStreamStart').style.display = live ? 'none' : '';
+    $('#btnStreamStop').style.display = live ? '' : 'none';
+    if (live) {
+        $('#liveTime').textContent = (st.timecode || '00:00:00').split('.')[0];
+        const dropped = st.dropped_frames || 0;
+        $('#streamStats').textContent = dropped > 0 ? `${dropped} dropped frames` : '';
+    } else {
+        $('#streamStats').textContent = '';
+    }
+}
+async function updateStreamStatus() {
+    try {
+        const r = await apiGet('/api/obs/stream/status');
+        updateStreamStatusUI(r.status === 'ok' ? r : { active: false });
+    } catch { updateStreamStatusUI({ active: false }); }
+}
+setInterval(updateStreamStatus, 5000);
+
+async function startStream() {
+    try { await apiPost('/api/obs/stream/start'); logMsg($('#oLog'), 'Stream started'); updateStreamStatus(); }
+    catch(e) { logMsg($('#oLog'), `Start stream: ${e.message}`); }
+}
+async function stopStream() {
+    if (!confirm('Stop the live stream?')) return;
+    try { await apiPost('/api/obs/stream/stop'); logMsg($('#oLog'), 'Stream stopped'); updateStreamStatus(); }
+    catch(e) { logMsg($('#oLog'), `Stop stream: ${e.message}`); }
 }
 
 /* ================================================================
@@ -625,7 +779,7 @@ async function setTwitchToken() {
     const token = document.getElementById('twitchToken').value.trim();
     if (!token) { logMsg($('#iLog'), 'Enter a token first'); return; }
     try {
-        const r = await apiPost('/api/ingest/token', { token });
+        await apiPost('/api/ingest/token', { token });
         document.getElementById('tokenStatus').textContent = '✓ Token set';
         document.getElementById('twitchToken').value = '';
         logMsg($('#iLog'), 'Twitch OAuth token set — takes effect on next feed start/reconnect');
@@ -646,11 +800,16 @@ async function checkTwitchToken() {
     } catch {}
 }
 
-function setDot(s, on) { const e = document.getElementById(`d${s}`); if (e) e.className = `dot ${on?'on':'off'}`; }
+function setDot(s, on) {
+    for (const id of [`d${s}`, `tabDot${s}`]) {
+        const e = document.getElementById(id);
+        if (e) e.className = `dot ${on?'on':'off'}`;
+    }
+}
 
 async function fetchQualities(s) {
     const u = document.getElementById(`u${s}`).value.trim();
-    if (!u) { logMsg($('#iLog'), `Slot ${s}: enter a URL first`); return; }
+    if (!u) { logMsg($('#iLog'), `Racer ${s+1}: enter a URL first`); return; }
     const btn = document.getElementById(`qBtn${s}`);
     const sel = document.getElementById(`q${s}`);
     const prev = btn.textContent;
@@ -666,47 +825,56 @@ async function fetchQualities(s) {
             sel.appendChild(opt);
         }
         if (qs.includes(curVal)) sel.value = curVal;
-        logMsg($('#iLog'), `Slot ${s}: ${qs.length} qualities found`);
-    } catch(e) { logMsg($('#iLog'), `Slot ${s}: quality fetch failed — ${e.message}`); }
+        logMsg($('#iLog'), `Racer ${s+1}: ${qs.length} qualities found`);
+    } catch(e) { logMsg($('#iLog'), `Racer ${s+1}: quality fetch failed — ${e.message}`); }
     finally { btn.textContent = prev; btn.disabled = false; }
+}
+
+const _previewPolls = {};   // slot → interval handle
+
+function stopPreviewPoll(s) {
+    if (_previewPolls[s]) { clearInterval(_previewPolls[s]); delete _previewPolls[s]; }
 }
 
 async function startF(s) {
     const u = document.getElementById(`u${s}`).value.trim();
-    if (!u) { logMsg($('#iLog'),`Slot ${s}: no URL`); return; }
+    if (!u) { logMsg($('#iLog'),`Racer ${s+1}: no URL`); return; }
     const quality = document.getElementById(`q${s}`).value || 'best';
     const startOffset = document.getElementById(`t${s}`).value.trim();
     showLoading(`load${s}`, 'Starting feed…');
+    stopPreviewPoll(s);
     try {
         const r = await apiPost('/api/ingest/start',{slot:s, url:u, quality:quality, start_offset: startOffset});
-        logMsg($('#iLog'),`Slot ${s}: ${r.local_url}`);
+        logMsg($('#iLog'),`Racer ${s+1}: ingesting → ${r.local_url}`);
         setDot(s, true);
         showLoading(`load${s}`, 'Waiting for first frame…');
         let tries = 0;
-        const poll = setInterval(async () => {
+        _previewPolls[s] = setInterval(async () => {
             tries++;
             try {
                 const pr = await apiGet(`/api/ingest/preview/${s}`);
                 if (pr.success) {
-                    clearInterval(poll);
+                    stopPreviewPoll(s);
                     const src = 'data:image/jpeg;base64,' + pr.image_b64;
                     const el = document.getElementById(`prev${s}`);
                     if (el) { el.src = src; el.style.display = 'block'; }
                     document.getElementById(`prevInfo${s}`).textContent = `${pr.width}×${pr.height}`;
                     if (s === cropSlot) loadCropImage(src, pr.width, pr.height);
-                    logMsg($('#iLog'), `Slot ${s}: preview captured (${pr.width}×${pr.height})`);
+                    logMsg($('#iLog'), `Racer ${s+1}: preview captured (${pr.width}×${pr.height})`);
                     hideLoading(`load${s}`);
                 }
             } catch(e) {}
-            if (tries >= 30) { clearInterval(poll); logMsg($('#iLog'), `Slot ${s}: preview timed out`); hideLoading(`load${s}`); }
+            if (tries >= 30) { stopPreviewPoll(s); logMsg($('#iLog'), `Racer ${s+1}: preview timed out`); hideLoading(`load${s}`); }
         }, 1000);
     } catch(e) { logMsg($('#iLog'),`Error: ${e.message}`); hideLoading(`load${s}`); }
 }
 
 async function stopF(s) {
+    stopPreviewPoll(s);
+    hideLoading(`load${s}`);
     try {
         await apiPost('/api/ingest/stop',{slot:s});
-        logMsg($('#iLog'),`Slot ${s}: stopped`); setDot(s, false);
+        logMsg($('#iLog'),`Racer ${s+1}: stopped`); setDot(s, false);
         const el = document.getElementById(`prev${s}`); if (el) el.style.display = 'none';
         document.getElementById(`prevInfo${s}`).textContent = '';
     } catch(e) { logMsg($('#iLog'),`Error: ${e.message}`); }
@@ -716,7 +884,7 @@ async function reconnectF(s) {
     showLoading(`load${s}`, 'Reconnecting…');
     try {
         const r = await apiPost('/api/ingest/reconnect', {slot: s});
-        logMsg($('#iLog'), `Slot ${s}: reconnected → ${r.local_url}`);
+        logMsg($('#iLog'), `Racer ${s+1}: reconnected → ${r.local_url}`);
         setDot(s, true);
     } catch(e) { logMsg($('#iLog'), `Reconnect error: ${e.message}`); }
     finally { hideLoading(`load${s}`); }
@@ -732,8 +900,8 @@ async function refreshPreview(slot) {
             if (el) { el.src = src; el.style.display = 'block'; }
             document.getElementById(`prevInfo${slot}`).textContent = `${r.width}×${r.height}`;
             if (slot === cropSlot) loadCropImage(src, r.width, r.height);
-            logMsg($('#iLog'), `Slot ${slot}: preview captured (${r.width}×${r.height})`);
-        } else { logMsg($('#iLog'), `Slot ${slot}: ${r.error}`); }
+            logMsg($('#iLog'), `Racer ${slot+1}: preview captured (${r.width}×${r.height})`);
+        } else { logMsg($('#iLog'), `Racer ${slot+1}: ${r.error}`); }
     } catch(e) { logMsg($('#iLog'), `Preview error: ${e.message}`); }
     finally { hideLoading(`load${slot}`); }
 }
@@ -743,6 +911,7 @@ async function refreshPreview(slot) {
    ================================================================ */
 let cropSlot = 0, cropMode = 'game';
 let cropImg = null, cropImgW = 0, cropImgH = 0;
+const cropDims = {};   // slot → {w, h} of the preview the regions were drawn on
 let dragging = false, dragStart = null, dragCurrent = null;
 let resizing = false, resizeCorner = null, resizeOrigRect = null;
 
@@ -751,8 +920,114 @@ const COLORS = {
     tracker: { fill: 'rgba(180,0,255,0.15)', stroke: '#b400ff' },
     timer:   { fill: 'rgba(255,200,0,0.15)', stroke: '#ffc800' },
 };
+const CUSTOM_COLORS = [
+    { fill: 'rgba(0,180,255,0.15)',  stroke: '#00b4ff' },
+    { fill: 'rgba(255,110,0,0.15)',  stroke: '#ff6e00' },
+    { fill: 'rgba(255,0,130,0.15)',  stroke: '#ff0082' },
+    { fill: 'rgba(140,255,0,0.15)',  stroke: '#8cff00' },
+    { fill: 'rgba(170,130,255,0.15)',stroke: '#aa82ff' },
+];
 const MODE_LABEL = { game: 'Game', tracker: 'Tracker', timer: 'Timer' };
+const MODE_ICON  = { game: '🎮', tracker: '📊', timer: '⏱' };
 const MODE_CSS   = { game: 'var(--green)', tracker: 'var(--purple)', timer: 'var(--yellow)' };
+
+/* ---- Custom crop regions (shared across all racers) ---- */
+let customRegions = [];   // lowercase keys, e.g. ['deaths']
+
+function allRegionModes() { return ['game', 'tracker', 'timer', ...customRegions]; }
+function colorFor(mode) {
+    return COLORS[mode] ||
+        CUSTOM_COLORS[Math.max(0, customRegions.indexOf(mode)) % CUSTOM_COLORS.length];
+}
+function labelFor(mode) {
+    return MODE_LABEL[mode] || (mode.charAt(0).toUpperCase() + mode.slice(1));
+}
+
+async function loadCustomRegions() {
+    try {
+        const r = await apiGet('/api/custom-regions');
+        customRegions = r.regions || [];
+    } catch { customRegions = []; }
+}
+
+function renderRegionUI() {
+    renderCropModeBtns();
+    renderTplModeBtns();
+    renderLegends();
+    if (!allRegionModes().includes(cropMode)) setCropMode('game');
+    if (tplMode !== 'text' && !allRegionModes().includes(tplMode)) setTplMode('game');
+    updateCoordsBar();
+    drawCropCanvas();
+    drawTplCanvas();
+}
+
+function renderCropModeBtns() {
+    const c = document.getElementById('cropModeBtns');
+    if (!c) return;
+    c.innerHTML = '';
+    for (const m of allRegionModes()) {
+        const btn = document.createElement('button');
+        btn.className = `bg btn-sm${m === cropMode ? ' btn-active' : ''}`;
+        btn.id = `cropModeBtn_${m}`;
+        btn.textContent = `${MODE_ICON[m] || '◻'} ${labelFor(m)}`;
+        if (!MODE_LABEL[m]) btn.style.background = colorFor(m).stroke;
+        btn.onclick = () => setCropMode(m);
+        c.appendChild(btn);
+    }
+}
+
+function renderTplModeBtns() {
+    const c = document.getElementById('tplModeBtns');
+    if (!c) return;
+    c.innerHTML = '';
+    for (const m of [...allRegionModes(), 'text']) {
+        const btn = document.createElement('button');
+        btn.className = `${m === 'text' ? 'bt' : 'bg'} btn-sm${m === tplMode ? ' btn-active' : ''}`;
+        btn.id = `tplModeBtn_${m}`;
+        btn.textContent = m === 'text' ? '📝 Text' : `${MODE_ICON[m] || '◻'} ${labelFor(m)}`;
+        if (m !== 'text' && !MODE_LABEL[m]) btn.style.background = colorFor(m).stroke;
+        btn.onclick = () => setTplMode(m);
+        c.appendChild(btn);
+    }
+}
+
+function renderLegends() {
+    const make = (modes, extra) => modes.map(m => `
+        <div class="crop-legend-item"><div class="crop-legend-swatch" style="background:${colorFor(m).stroke}"></div> ${esc(labelFor(m))}</div>
+    `).join('') + (extra || '');
+    const cl = document.getElementById('cropLegend');
+    if (cl) cl.innerHTML = make(allRegionModes());
+    const tl = document.getElementById('tplLegend');
+    if (tl) tl.innerHTML = make(allRegionModes(),
+        '<div class="crop-legend-item"><div class="crop-legend-swatch" style="background:#00d2d2"></div> Text</div>');
+}
+
+async function addCustomRegion() {
+    const name = prompt('Name for the new region (e.g. "deaths", "webcam"):');
+    if (!name) return;
+    try {
+        const r = await apiPost('/api/custom-regions', { name });
+        if (r.status === 'error') { logMsg($('#cLog'), `Region: ${r.error}`); return; }
+        customRegions = r.regions;
+        renderRegionUI();
+        logMsg($('#cLog'), `Added region "${customRegions[customRegions.length-1]}" — it applies to every racer`);
+    } catch(e) { logMsg($('#cLog'), `Region error: ${e.message}`); }
+}
+
+async function removeCustomRegion() {
+    if (!customRegions.length) { logMsg($('#cLog'), 'No custom regions to remove'); return; }
+    const name = customRegions.includes(cropMode) ? cropMode
+        : prompt(`Which region to remove? (${customRegions.join(', ')})`);
+    if (!name || !customRegions.includes(name)) return;
+    if (!confirm(`Remove region "${name}" for all racers?`)) return;
+    try {
+        const r = await apiDelete(`/api/custom-regions/${encodeURIComponent(name)}`);
+        customRegions = r.regions || [];
+        for (const s of Object.keys(cropRegions)) delete cropRegions[s][name];
+        renderRegionUI();
+        logMsg($('#cLog'), `Removed region "${name}"`);
+    } catch(e) { logMsg($('#cLog'), `Region error: ${e.message}`); }
+}
 
 function selSlot(s) {
     cropSlot = s; dragging = false; resizing = false;
@@ -774,12 +1049,9 @@ function selSlot(s) {
 
 function setCropMode(mode) {
     cropMode = mode; dragging = false; resizing = false;
-    $('#cropModeLabel').textContent = MODE_LABEL[mode];
-    $('#cropModeLabel').style.color = MODE_CSS[mode];
-    for (const m of ['game','tracker','timer']) {
-        const id = `#cropMode${m[0].toUpperCase()+m.slice(1)}`;
-        document.querySelector(id).classList.toggle('btn-active', m === mode);
-    }
+    $('#cropModeLabel').textContent = labelFor(mode);
+    $('#cropModeLabel').style.color = MODE_CSS[mode] || colorFor(mode).stroke;
+    renderCropModeBtns();
     syncInputsFromRegion();
     drawCropCanvas();
 }
@@ -789,7 +1061,7 @@ function clearCropRegion() {
     dragging = false; resizing = false;
     syncInputsFromRegion();
     drawCropCanvas(); updateCoordsBar();
-    logMsg($('#cLog'), `Cleared ${cropMode} region for Racer ${cropSlot+1}`);
+    logMsg($('#cLog'), `Cleared ${labelFor(cropMode)} region for Racer ${cropSlot+1}`);
 }
 
 function syncInputsFromRegion() {
@@ -809,7 +1081,7 @@ function applyCropInputs() {
     if (w < 4 || h < 4) return;
     cropRegions[cropSlot][cropMode] = { x1: x, y1: y, x2: x+w, y2: y+h };
     drawCropCanvas(); updateCoordsBar();
-    logMsg($('#cLog'), `${MODE_LABEL[cropMode]}: set to (${x},${y}) ${w}×${h}`);
+    logMsg($('#cLog'), `${labelFor(cropMode)}: set to (${x},${y}) ${w}×${h}`);
 }
 
 async function refreshCropPreview() {
@@ -829,6 +1101,7 @@ async function refreshCropPreview() {
 
 function loadCropImage(src, w, h) {
     cropImgW = w; cropImgH = h;
+    cropDims[cropSlot] = { w, h };
     const img = new Image();
     img.onload = () => {
         cropImg = img;
@@ -855,7 +1128,7 @@ function drawCropCanvas() {
     const regions = cropRegions[cropSlot] || {};
     for (const [mode, rect] of Object.entries(regions)) {
         if (!rect) continue;
-        const col = COLORS[mode];
+        const col = colorFor(mode);
         const rx = rect.x1 * sx, ry = rect.y1 * sy;
         const rw = (rect.x2 - rect.x1) * sx, rh = (rect.y2 - rect.y1) * sy;
         ctx.fillStyle = col.fill; ctx.fillRect(rx, ry, rw, rh);
@@ -863,7 +1136,7 @@ function drawCropCanvas() {
         ctx.setLineDash(mode === cropMode ? [] : [4, 4]);
         ctx.strokeRect(rx, ry, rw, rh); ctx.setLineDash([]);
         ctx.fillStyle = col.stroke; ctx.font = 'bold 12px system-ui';
-        ctx.fillText(MODE_LABEL[mode], rx + 4, ry + 14);
+        ctx.fillText(labelFor(mode), rx + 4, ry + 14);
 
         // Corner handles for active mode
         if (mode === cropMode) {
@@ -876,13 +1149,13 @@ function drawCropCanvas() {
         }
     }
 
-    // In-progress drag rectangle
+    // In-progress drag rectangle (image coords → bitmap pixels)
     if (dragging && dragStart && dragCurrent) {
-        const col = COLORS[cropMode];
-        const rx = Math.min(dragStart.cx, dragCurrent.cx);
-        const ry = Math.min(dragStart.cy, dragCurrent.cy);
-        const rw = Math.abs(dragCurrent.cx - dragStart.cx);
-        const rh = Math.abs(dragCurrent.cy - dragStart.cy);
+        const col = colorFor(cropMode);
+        const rx = Math.min(dragStart.ix, dragCurrent.ix) * sx;
+        const ry = Math.min(dragStart.iy, dragCurrent.iy) * sy;
+        const rw = Math.abs(dragCurrent.ix - dragStart.ix) * sx;
+        const rh = Math.abs(dragCurrent.iy - dragStart.iy) * sy;
         ctx.fillStyle = col.fill; ctx.fillRect(rx, ry, rw, rh);
         ctx.strokeStyle = col.stroke; ctx.lineWidth = 2;
         ctx.strokeRect(rx, ry, rw, rh);
@@ -965,6 +1238,8 @@ function onCropMouseMove(e) {
         drawCropCanvas();
     }
 
+    $('#coordsCursor').textContent = `Cursor: ${ix}, ${iy}`;
+
     // Magnifier
     const mag = $('#magnifier');
     if (!$('#magToggle').checked) { mag.style.display = 'none'; return; }
@@ -981,7 +1256,6 @@ function onCropMouseMove(e) {
     mag.style.backgroundImage = `url(${cropImg.src})`;
     mag.style.backgroundSize = `${zoomW}px ${zoomH}px`;
     mag.style.backgroundPosition = `${bgX}px ${bgY}px`;
-    $('#coordsCursor').textContent = `Cursor: ${ix}, ${iy}`;
 }
 
 function onCropMouseUp(e) {
@@ -989,7 +1263,7 @@ function onCropMouseUp(e) {
         resizing = false; resizeCorner = null; resizeOrigRect = null;
         updateCoordsBar();
         const r = cropRegions[cropSlot][cropMode];
-        if (r) logMsg($('#cLog'), `${MODE_LABEL[cropMode]}: resized to (${r.x1},${r.y1})→(${r.x2},${r.y2}) [${r.x2-r.x1}×${r.y2-r.y1}]`);
+        if (r) logMsg($('#cLog'), `${labelFor(cropMode)}: resized to (${r.x1},${r.y1})→(${r.x2},${r.y2}) [${r.x2-r.x1}×${r.y2-r.y1}]`);
         return;
     }
     if (!dragging) return;
@@ -1002,21 +1276,22 @@ function onCropMouseUp(e) {
     cropRegions[cropSlot][cropMode] = { x1, y1, x2, y2 };
     syncInputsFromRegion();
     drawCropCanvas(); updateCoordsBar();
-    logMsg($('#cLog'), `${MODE_LABEL[cropMode]}: (${x1},${y1})→(${x2},${y2}) [${x2-x1}×${y2-y1}]`);
+    logMsg($('#cLog'), `${labelFor(cropMode)}: (${x1},${y1})→(${x2},${y2}) [${x2-x1}×${y2-y1}]`);
 }
 
 function onCropLeave() { $('#magnifier').style.display = 'none'; }
 
 function updateCoordsBar() {
-    const r = cropRegions[cropSlot];
-    for (const mode of ['game','tracker','timer']) {
-        const key = mode[0].toUpperCase() + mode.slice(1);
-        const el = $(`#coords${key}`);
-        if (r[mode]) {
-            const c = r[mode];
-            el.textContent = `${MODE_LABEL[mode]}: (${c.x1},${c.y1})→(${c.x2},${c.y2}) [${c.x2-c.x1}×${c.y2-c.y1}]`;
-        } else el.textContent = `${MODE_LABEL[mode]}: —`;
-    }
+    const container = document.getElementById('coordsRegions');
+    if (!container) return;
+    const r = cropRegions[cropSlot] || {};
+    container.innerHTML = allRegionModes().map(mode => {
+        const c = r[mode];
+        const txt = c
+            ? `${labelFor(mode)}: (${c.x1},${c.y1})→(${c.x2},${c.y2}) [${c.x2-c.x1}×${c.y2-c.y1}]`
+            : `${labelFor(mode)}: —`;
+        return `<span>${esc(txt)}</span>`;
+    }).join('');
 }
 
 async function applyAllCrops() {
@@ -1027,23 +1302,35 @@ async function applyAllCrops() {
             logMsg($('#cLog'), 'Re-applied template positioning before crops');
         } catch(e) { /* template apply is best-effort */ }
     }
-    const regions = cropRegions[cropSlot];
-    let applied = 0;
-    for (const [mode, rect] of Object.entries(regions)) {
-        if (!rect) continue;
-        const sourceName = `Racer${cropSlot+1}_${mode[0].toUpperCase()+mode.slice(1)}`;
-        try {
-            await apiPost('/api/detect/manual', {
-                source_name: sourceName,
-                x: rect.x1, y: rect.y1,
-                width: rect.x2 - rect.x1, height: rect.y2 - rect.y1,
-                source_width: cropImgW, source_height: cropImgH,
-            });
-            applied++;
-            logMsg($('#cLog'), `Applied ${mode} crop → ${sourceName}`);
-        } catch(e) { logMsg($('#cLog'), `Error applying ${mode}: ${e.message}`); }
+    // Apply every racer's defined regions, not just the visible one —
+    // each slot's crop is interpreted against the preview it was drawn on.
+    let applied = 0, defined = 0;
+    for (let s = 0; s < numSlots; s++) {
+        const regions = cropRegions[s] || {};
+        const dims = cropDims[s];
+        for (const [mode, rect] of Object.entries(regions)) {
+            if (!rect) continue;
+            defined++;
+            const sourceName = `Racer${s+1}_${mode[0].toUpperCase()+mode.slice(1)}`;
+            if (!dims || !dims.w || !dims.h) {
+                logMsg($('#cLog'), `Racer ${s+1} ${mode}: skipped — load a preview frame for this racer first`);
+                continue;
+            }
+            try {
+                const r = await apiPost('/api/detect/manual', {
+                    source_name: sourceName,
+                    x: rect.x1, y: rect.y1,
+                    width: rect.x2 - rect.x1, height: rect.y2 - rect.y1,
+                    source_width: dims.w, source_height: dims.h,
+                });
+                if (r.status === 'error') { logMsg($('#cLog'), `Error applying Racer ${s+1} ${mode}: ${r.error}`); continue; }
+                applied++;
+                logMsg($('#cLog'), `Applied ${mode} crop → ${sourceName}`);
+            } catch(e) { logMsg($('#cLog'), `Error applying Racer ${s+1} ${mode}: ${e.message}`); }
+        }
     }
-    if (applied === 0) logMsg($('#cLog'), 'No crop regions defined to apply.');
+    if (defined === 0) logMsg($('#cLog'), 'No crop regions defined to apply.');
+    else logMsg($('#cLog'), `Done: ${applied}/${defined} crop region(s) applied.`);
 }
 
 
@@ -1060,7 +1347,7 @@ document.addEventListener('DOMContentLoaded', () => {
    SCENE PREVIEW
    ================================================================ */
 let scenePreviewInterval = null;
-async function refreshScenePreview() {
+async function refreshScenePreview(manual = true) {
     try {
         const r = await apiGet('/api/obs/screenshot');
         if (r.success) {
@@ -1068,15 +1355,15 @@ async function refreshScenePreview() {
             img.src = 'data:image/jpeg;base64,' + r.image_b64;
             img.style.display = 'block';
             $('#scenePreviewPlaceholder').style.display = 'none';
-        } else logMsg($('#oLog'), `Screenshot: ${r.error}`);
-    } catch(e) { logMsg($('#oLog'), `Screenshot error: ${e.message}`); }
+        } else if (manual) logMsg($('#oLog'), `Screenshot: ${r.error}`);
+    } catch(e) { if (manual) logMsg($('#oLog'), `Screenshot error: ${e.message}`); }
 }
 document.addEventListener('DOMContentLoaded', () => {
     const cb = document.getElementById('autoScenePreview');
     if (cb) cb.addEventListener('change', function() {
         if (this.checked) {
-            refreshScenePreview();
-            scenePreviewInterval = setInterval(refreshScenePreview, 5000);
+            refreshScenePreview(false);
+            scenePreviewInterval = setInterval(() => refreshScenePreview(false), 5000);
         } else { clearInterval(scenePreviewInterval); scenePreviewInterval = null; }
     });
 });
@@ -1091,8 +1378,22 @@ function updateAudioUI(slot) {
     }
 }
 async function switchAudio(slot) {
-    try { await apiPost('/api/obs/audio', { active_slot: slot, num_slots: numSlots }); updateAudioUI(slot); logMsg($('#aLog'), `Audio → Racer ${slot+1}`); }
+    try {
+        const r = await apiPost('/api/obs/audio', { active_slot: slot, num_slots: numSlots });
+        if (r.status === 'error') { logMsg($('#aLog'), `Audio error: ${r.error}`); return; }
+        updateAudioUI(slot);
+        logMsg($('#aLog'), `Audio → Racer ${slot+1}`);
+    }
     catch(e) { logMsg($('#aLog'), `Error: ${e.message}`); }
+}
+
+async function syncAudioSoloState() {
+    // Restore the solo-button highlight from actual OBS mute state
+    try {
+        const r = await apiGet(`/api/obs/audio?num_slots=${numSlots}`);
+        const unmuted = Object.entries(r).filter(([, v]) => v.muted === false);
+        updateAudioUI(unmuted.length === 1 ? +unmuted[0][0] : -1);
+    } catch {}
 }
 async function muteAll() {
     try {
@@ -1109,19 +1410,33 @@ async function muteAll() {
 /* --- Per-source mixer --- */
 let _mixerDebounce = {};
 function buildMixerStrip(inp) {
+    // Built with DOM APIs — OBS source names are user-controlled and must
+    // never be interpolated into HTML.
     const div = document.createElement('div');
     div.className = 'mixer-strip';
-    div.dataset.inputName = inp.name;
     const db = inp.volume_db ?? 0;
     const pct = Math.round(((db + 100) / 126) * 100);
-    div.innerHTML = `
-        <span class="strip-name" title="${inp.name}">${inp.name}</span>
-        <input type="range" min="0" max="100" value="${pct}"
-               oninput="mixerSlide(this, '${inp.name.replace(/'/g,"\\'")}')"
-               title="${db.toFixed(1)} dB">
-        <span class="db-label">${db.toFixed(1)} dB</span>
-        <button class="mute-btn${inp.muted ? ' muted':''}"
-                onclick="mixerMute(this, '${inp.name.replace(/'/g,"\\'")}')">${inp.muted ? '🔇':'🔊'}</button>`;
+
+    const name = document.createElement('span');
+    name.className = 'strip-name';
+    name.title = inp.name;
+    name.textContent = inp.name;
+
+    const slider = document.createElement('input');
+    slider.type = 'range'; slider.min = 0; slider.max = 100; slider.value = pct;
+    slider.title = `${db.toFixed(1)} dB`;
+    slider.addEventListener('input', () => mixerSlide(slider, inp.name));
+
+    const label = document.createElement('span');
+    label.className = 'db-label';
+    label.textContent = `${db.toFixed(1)} dB`;
+
+    const mute = document.createElement('button');
+    mute.className = `mute-btn${inp.muted ? ' muted' : ''}`;
+    mute.textContent = inp.muted ? '🔇' : '🔊';
+    mute.addEventListener('click', () => mixerMute(mute, inp.name));
+
+    div.append(name, slider, label, mute);
     return div;
 }
 
@@ -1133,7 +1448,8 @@ function mixerSlide(el, name) {
     if (label) label.textContent = db.toFixed(1) + ' dB';
     clearTimeout(_mixerDebounce[name]);
     _mixerDebounce[name] = setTimeout(() => {
-        apiPost('/api/obs/audio/volume', { input_name: name, volume_db: parseFloat(db.toFixed(1)) });
+        apiPost('/api/obs/audio/volume', { input_name: name, volume_db: parseFloat(db.toFixed(1)) })
+            .catch(e => logMsg($('#aLog'), `Volume error: ${e.message}`));
     }, 150);
 }
 
@@ -1148,13 +1464,20 @@ async function mixerMute(btn, name) {
 
 async function refreshMixer() {
     try {
-        const r = await apiGet('/api/obs/audio/mixer');
+        const sceneOnly = $('#mixerSceneOnly')?.checked !== false;
+        const r = await apiGet(`/api/obs/audio/mixer?scope=${sceneOnly ? 'scene' : 'all'}`);
         const container = document.getElementById('mixerStrips');
         if (!container) return;
         container.innerHTML = '';
-        if (r.status !== 'ok') { container.textContent = r.error || 'Error'; return; }
+        const sceneLabel = $('#mixerScene');
+        if (r.status !== 'ok') {
+            container.innerHTML = '<div style="font-size:12px;color:var(--text2);padding:8px">Connect OBS to see audio sources.</div>';
+            if (sceneLabel) sceneLabel.textContent = '';
+            return;
+        }
+        if (sceneLabel) sceneLabel.textContent = r.scene ? `— scene “${r.scene}”` : '— all inputs';
         for (const inp of r.inputs) container.appendChild(buildMixerStrip(inp));
-        if (!r.inputs.length) container.innerHTML = '<div style="font-size:12px;color:var(--text2)">No audio inputs found</div>';
+        if (!r.inputs.length) container.innerHTML = '<div style="font-size:12px;color:var(--text2);padding:8px">No audio inputs found in this scene.</div>';
     } catch(e) { logMsg($('#aLog'), `Mixer error: ${e.message}`); }
 }
 
@@ -1176,28 +1499,61 @@ async function fetchDevices() {
 }
 
 let _obsPlatform = '';
+let _obsTextKind = '';
+
+function applyObsStatus(st) {
+    _obsTextKind = st.text_kind || '';
+    updateAudioCaptureUI(st.platform);
+    drawTplCanvas();   // text preview depends on the OBS text kind
+}
 
 function updateAudioCaptureUI(platform) {
     _obsPlatform = platform || '';
     const appRow = document.getElementById('appCaptureRow');
     const devRow = document.getElementById('deviceCaptureRow');
     const desc = document.getElementById('audioCaptureDesc');
+    // Device capture works everywhere; app capture is Windows-only.
+    devRow.style.display = 'flex';
     if (_obsPlatform === 'windows') {
         appRow.style.display = 'flex';
-        devRow.style.display = 'none';
-        desc.textContent = 'Application Audio Capture — captures only Discord audio (Windows).';
+        desc.textContent = 'Capture a single app’s audio (recommended: pick Discord below), or capture a whole output device.';
+        fetchApps();
     } else {
         appRow.style.display = 'none';
-        devRow.style.display = 'flex';
         desc.textContent = 'Captures Discord/commentary audio into OBS. Select the audio device Discord outputs to.';
     }
 }
 
-async function addDiscord() {
+async function fetchApps() {
+    try {
+        const r = await apiGet('/api/obs/audio/apps');
+        const sel = document.getElementById('appCaptureSel');
+        if (!sel) return;
+        sel.innerHTML = '';
+        const apps = r.apps || [];
+        if (!apps.length) {
+            const opt = document.createElement('option');
+            opt.value = ''; opt.textContent = r.status === 'ok' ? '— no app windows found —' : '— scan failed —';
+            sel.appendChild(opt);
+            return;
+        }
+        for (const a of apps) {
+            const opt = document.createElement('option');
+            opt.value = a.itemValue || '';
+            opt.textContent = a.itemName || a.itemValue;
+            if (/discord/i.test(opt.textContent)) opt.selected = true;
+            sel.appendChild(opt);
+        }
+        logMsg($('#aLog'), `Found ${apps.length} capturable app window(s)`);
+    } catch(e) { logMsg($('#aLog'), `App scan error: ${e.message}`); }
+}
+
+async function addDiscord(useApp) {
     const body = {};
-    if (_obsPlatform === 'windows') {
-        const appName = document.getElementById('appCaptureName')?.value || 'Discord.exe';
-        body.window = appName;
+    if (useApp && _obsPlatform === 'windows') {
+        const sel = document.getElementById('appCaptureSel');
+        if (!sel || !sel.value) { logMsg($('#aLog'), 'Scan apps and pick one first (↻ Apps)'); return; }
+        body.window = sel.value;
     } else {
         const sel = document.getElementById('discordDevice');
         body.device_id = sel ? sel.value : 'default';
@@ -1205,7 +1561,7 @@ async function addDiscord() {
     try {
         const r = await apiPost('/api/obs/audio/discord', body);
         if (r.status === 'ok') {
-            const detail = body.window ? `app: ${body.window}` : `device: ${body.device_id}`;
+            const detail = body.window ? `app: ${body.window.split(':').pop()}` : `device: ${body.device_id}`;
             logMsg($('#aLog'), `Commentary source created (${detail})`);
             setTimeout(refreshMixer, 500);
         } else logMsg($('#aLog'), `Audio error: ${r.error}`);
@@ -1247,7 +1603,7 @@ async function openProjector() {
     const [w, h] = (sel ? sel.value : '0x0').split('x').map(Number);
     try {
         // + 44px for OBS projector window title bar – not sure if this is consistent across platforms but it’s a minor difference either way
-        const r = await apiPost('/api/obs/projector', { scene_name: 'Race Scene', monitor: -1, width: w, height: h + 44 });
+        const r = await apiPost('/api/obs/projector', { scene_name: 'Race Scene', monitor: -1, width: w, height: h ? h + 44 : 0 });
         if (r.status === 'ok') logMsg($('#aLog'), `Projector opened${w ? ` (${w}×${h})` : ''} — share this in Discord`);
         else logMsg($('#aLog'), `Projector error: ${r.error}`);
     } catch(e) { logMsg($('#aLog'), `Projector error: ${e.message}`); }
@@ -1270,6 +1626,10 @@ let syncSlot = 0;
 function selSync(s) {
     syncSlot = s;
     $('#sTarget').textContent = `Racer${s+1}_Feed`;
+    for (let i = 0; i < numSlots; i++) {
+        const btn = document.getElementById(`syncBtn${i}`);
+        if (btn) btn.classList.toggle('btn-active', i === s);
+    }
     refreshSyncDelay();
 }
 async function refreshSyncDelay() {
@@ -1297,7 +1657,7 @@ async function resetSync() {
         const info = cur[String(syncSlot)];
         const toRemove = info ? -info.delay_ms : 0;
         if (toRemove === 0) { logMsg($('#sLog'), `${src}: already at 0 ms`); return; }
-        const r = await apiPost('/api/obs/sync', { source_name: src, delta_ms: toRemove });
+        await apiPost('/api/obs/sync', { source_name: src, delta_ms: toRemove });
         $('#sDelay').textContent = '0 ms';
         logMsg($('#sLog'), `${src}: reset to 0 ms`);
     }
@@ -1310,20 +1670,21 @@ async function resetSync() {
 async function launchObs() {
     try {
         const r = await apiPost('/api/obs/launch');
-        if (r.status === 'ok') logMsg($('#oLog'), 'OBS launched');
+        if (r.status === 'ok') logMsg($('#oLog'), 'OBS launched — wait a few seconds, then click Connect');
         else logMsg($('#oLog'), `Launch failed: ${r.error}`);
     } catch(e) { logMsg($('#oLog'), `Launch error: ${e.message}`); }
 }
 async function obsConn() {
     try {
-        await apiPost('/api/obs/connect');
-        $('#obsDot').className = 'dot on'; logMsg($('#oLog'), 'Connected'); loadSc(); populateProjectorRes();
-        const st = await apiGet('/api/obs/status'); updateAudioCaptureUI(st.platform);
+        const r = await apiPost('/api/obs/connect');
+        if (r.status === 'error') { logMsg($('#oLog'), `Connect failed: ${r.error}`); toast(`OBS connect failed: ${r.error}`); return; }
+        setObsDot(true); logMsg($('#oLog'), 'Connected'); loadSc(); populateProjectorRes(); refreshMixer(); updateStreamStatus(); syncAudioSoloState(); refreshSyncDelay();
+        const st = await apiGet('/api/obs/status'); applyObsStatus(st);
     }
     catch(e) { logMsg($('#oLog'), e.message); }
 }
 async function obsDisc() {
-    try { await apiPost('/api/obs/disconnect'); $('#obsDot').className = 'dot off'; logMsg($('#oLog'), 'Disconnected'); }
+    try { await apiPost('/api/obs/disconnect'); setObsDot(false); logMsg($('#oLog'), 'Disconnected'); }
     catch(e) { logMsg($('#oLog'), e.message); }
 }
 async function obsInit() {
@@ -1335,11 +1696,12 @@ async function loadSc() {
         const r = await apiGet('/api/obs/scenes');
         const s = $('#scSel'); s.innerHTML = '';
         (r.scenes||[]).forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; s.appendChild(o); });
+        if (r.current) s.value = r.current;   // reflect the live program scene
     } catch {}
 }
 async function switchSc() {
     const n = $('#scSel').value;
-    if (n) try { await apiPost('/api/obs/scene', { scene_name: n }); logMsg($('#oLog'), `Scene: ${n}`); } catch(e) { logMsg($('#oLog'), e.message); }
+    if (n) try { await apiPost('/api/obs/scene', { scene_name: n }); logMsg($('#oLog'), `Scene: ${n}`); refreshMixer(); } catch(e) { logMsg($('#oLog'), e.message); }
 }
 
 /* ================================================================
@@ -1351,11 +1713,69 @@ async function savePreset() {
     if (!channel || !name) { logMsg($('#cLog'), 'Enter channel and preset name'); return; }
     const r = cropRegions[cropSlot];
     const toRect = (rect) => rect ? { x: rect.x1, y: rect.y1, width: rect.x2-rect.x1, height: rect.y2-rect.y1, source_width: cropImgW, source_height: cropImgH } : null;
+    const extra = {};
+    for (const k of customRegions) {
+        const rect = toRect(r[k]);
+        if (rect) extra[k] = rect;
+    }
     try {
-        await apiPost('/api/presets', { channel, name, game_crop: toRect(r.game), tracker_crop: toRect(r.tracker), timer_crop: toRect(r.timer) });
+        await apiPost('/api/presets', {
+            channel, name,
+            game_crop: toRect(r.game), tracker_crop: toRect(r.tracker), timer_crop: toRect(r.timer),
+            extra_crops: Object.keys(extra).length ? extra : null,
+        });
         logMsg($('#cLog'), `Preset saved: ${name} (${channel})`);
         loadPresets();
     } catch(e) { logMsg($('#cLog'), `Save error: ${e.message}`); }
+}
+
+const _openPresetImgs = new Set();
+
+function presetImagesPanel(p) {
+    const id = Number(p.id);
+    const chips = Object.entries(p.images || {}).map(([reg, info]) => `
+        <span style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;font-size:11px;display:inline-flex;align-items:center;gap:4px">
+            ${esc(reg)}: ${esc((info||{}).original_name || 'image')}
+            <a href="#" onclick="removePresetImage(${id},'${esc(reg)}');return false" style="color:var(--red);text-decoration:none">✕</a>
+        </span>`).join(' ');
+    const regionOpts = allRegionModes().map(m => `<option value="${esc(m)}">${esc(labelFor(m))}</option>`).join('');
+    return `
+        <div class="preset-imgs" id="pimgs${id}" style="display:${_openPresetImgs.has(id)?'flex':'none'};gap:6px;align-items:center;flex-wrap:wrap;padding:6px 8px 8px 16px;border-bottom:1px solid var(--border);background:var(--bg2)">
+            ${chips || '<span class="hint">No images attached.</span>'}
+            <select id="pimgRegion${id}" style="width:auto;margin:0;padding:3px 6px;font-size:11px">${regionOpts}</select>
+            <input type="file" id="pimgFile${id}" accept=".jpg,.jpeg,.png,.webp" style="width:auto;margin:0;padding:2px;font-size:11px">
+            <button class="bt btn-sm" onclick="uploadPresetImage(${id})">Attach</button>
+            <span class="hint">Shown instead of that region when the preset is applied (e.g. tracker placeholder).</span>
+        </div>`;
+}
+
+function togglePresetImgs(id) {
+    if (_openPresetImgs.has(id)) _openPresetImgs.delete(id); else _openPresetImgs.add(id);
+    const el = document.getElementById(`pimgs${id}`);
+    if (el) el.style.display = _openPresetImgs.has(id) ? 'flex' : 'none';
+}
+
+async function uploadPresetImage(id) {
+    const fileEl = document.getElementById(`pimgFile${id}`);
+    const region = document.getElementById(`pimgRegion${id}`)?.value || 'tracker';
+    const f = fileEl?.files[0];
+    if (!f) { logMsg($('#cLog'), 'Pick an image file first'); return; }
+    const fd = new FormData();
+    fd.append('file', f);
+    try {
+        const r = await fetch(API+`/api/presets/${id}/image?region=${encodeURIComponent(region)}`, { method: 'POST', body: fd });
+        const j = await r.json();
+        if (j.status === 'ok') { logMsg($('#cLog'), `Image attached to preset (${region})`); loadPresets(); }
+        else logMsg($('#cLog'), `Image error: ${j.error || 'unknown'}`);
+    } catch(e) { logMsg($('#cLog'), `Image error: ${e.message}`); }
+}
+
+async function removePresetImage(id, region) {
+    if (!confirm(`Remove the ${region} image from this preset?`)) return;
+    try {
+        await apiDelete(`/api/presets/${id}/image?region=${encodeURIComponent(region)}`);
+        loadPresets();
+    } catch(e) { logMsg($('#cLog'), `Image error: ${e.message}`); }
 }
 
 async function loadPresets() {
@@ -1366,12 +1786,14 @@ async function loadPresets() {
         if (!r.presets || !r.presets.length) { list.innerHTML = '<div style="padding:12px;color:var(--text2);font-size:12px;text-align:center">No presets found.</div>'; return; }
         list.innerHTML = r.presets.map(p => `
             <div class="preset-row">
-                <span class="channel">${p.channel}</span>
-                <span class="name">${p.name}</span>
-                <span style="font-size:10px;color:var(--text2)">${(p.created_at||'').split('.')[0]}</span>
-                <button class="bg btn-sm" onclick="applyPreset(${p.id})">Apply</button>
-                <button class="br btn-sm" onclick="deletePreset(${p.id})">🗑</button>
+                <span class="channel">${esc(p.channel)}</span>
+                <span class="name">${esc(p.name)}</span>
+                <span style="font-size:10px;color:var(--text2)">${esc((p.created_at||'').split('.')[0])}</span>
+                <button class="bt btn-sm" onclick="togglePresetImgs(${Number(p.id)})" title="Attach images (placeholders) to this preset">🖼${Object.keys(p.images||{}).length ? '•' : ''}</button>
+                <button class="bg btn-sm" onclick="applyPreset(${Number(p.id)})" title="Applies to the racer selected above">Apply</button>
+                <button class="br btn-sm" onclick="deletePreset(${Number(p.id)})">🗑</button>
             </div>
+            ${presetImagesPanel(p)}
         `).join('');
     } catch(e) { logMsg($('#cLog'), `Load error: ${e.message}`); }
 }
@@ -1384,20 +1806,22 @@ async function applyPreset(id) {
         const pr = await apiGet('/api/presets?channel=');
         const p = (pr.presets||[]).find(x => x.id === id);
         if (p) {
-            for (const mode of ['game','tracker','timer']) {
-                const key = mode + '_crop';
-                if (p[key]) {
-                    const sw = p[key].source_width || 1920;
-                    const sh = p[key].source_height || 1080;
-                    const sx = cropImgW ? cropImgW / sw : 1;
-                    const sy = cropImgH ? cropImgH / sh : 1;
-                    cropRegions[cropSlot][mode] = {
-                        x1: Math.round(p[key].x * sx),
-                        y1: Math.round(p[key].y * sy),
-                        x2: Math.round((p[key].x + p[key].width) * sx),
-                        y2: Math.round((p[key].y + p[key].height) * sy),
-                    };
-                }
+            const rects = {
+                game: p.game_crop, tracker: p.tracker_crop, timer: p.timer_crop,
+                ...(p.extra_crops || {}),
+            };
+            for (const [mode, rect] of Object.entries(rects)) {
+                if (!rect) continue;
+                const sw = rect.source_width || 1920;
+                const sh = rect.source_height || 1080;
+                const sx = cropImgW ? cropImgW / sw : 1;
+                const sy = cropImgH ? cropImgH / sh : 1;
+                cropRegions[cropSlot][mode] = {
+                    x1: Math.round(rect.x * sx),
+                    y1: Math.round(rect.y * sy),
+                    x2: Math.round((rect.x + rect.width) * sx),
+                    y2: Math.round((rect.y + rect.height) * sy),
+                };
             }
             syncInputsFromRegion();
             drawCropCanvas();
@@ -1406,6 +1830,7 @@ async function applyPreset(id) {
 }
 
 async function deletePreset(id) {
+    if (!confirm('Delete this preset?')) return;
     try { await apiDelete(`/api/presets/${id}`); loadPresets(); }
     catch(e) { logMsg($('#cLog'), `Delete error: ${e.message}`); }
 }
@@ -1415,7 +1840,7 @@ async function deletePreset(id) {
    ================================================================ */
 let tplMode = 'game', tplImg = null, tplImgW = 0, tplImgH = 0, tplId = null;
 let tplSlot = 0;  // currently selected slot
-let tplRegions = { slots: { "0": { game: null, tracker: null, timer: null }, "1": { game: null, tracker: null, timer: null } }, num_slots: 2, texts: [] };
+let tplRegions = { slots: { "0": { game: null, tracker: null, timer: null }, "1": { game: null, tracker: null, timer: null } }, num_slots: 2, texts: [], images: {} };
 let tplAction = null; // { type: 'draw'|'move'|'resize', ... }
 
 function emptySlotRegions() { return { game: null, tracker: null, timer: null }; }
@@ -1439,6 +1864,7 @@ function renderTplSlotBtns() {
 function selectTplSlot(s) {
     tplSlot = s;
     renderTplSlotBtns();
+    updateTplRegionImgBar();
     drawTplCanvas();
 }
 
@@ -1468,14 +1894,84 @@ function removeTplSlot() {
 
 function setTplMode(mode) {
     tplMode = mode;
-    for (const m of ['game','tracker','timer','text']) {
-        const id = `#tplMode${m[0].toUpperCase()+m.slice(1)}`;
-        const el = document.querySelector(id);
-        if (el) el.classList.toggle('btn-active', m === mode);
-    }
+    renderTplModeBtns();
     const textEd = document.getElementById('tplTextEditor');
     if (textEd) textEd.style.display = mode === 'text' ? 'block' : 'none';
+    updateTplRegionImgBar();
     drawTplCanvas();
+}
+
+/* ---- Region images (placeholders shown instead of a racer's region) ---- */
+let _regionImgCache = {};   // "slot/mode" → Image
+let _regionImgBust = 0;     // cache-buster, bumped on attach/remove
+
+function tplRegionImage(slot, mode) {
+    return ((tplRegions.images || {})[String(slot)] || {})[mode] || null;
+}
+
+function updateTplRegionImgBar() {
+    const bar = document.getElementById('tplRegionImgBar');
+    if (!bar) return;
+    const active = tplId && tplMode !== 'text';
+    bar.style.display = active ? 'flex' : 'none';
+    if (!active) return;
+    document.getElementById('tplRegionImgLabel').textContent =
+        `🖼 Image for R${tplSlot + 1} · ${labelFor(tplMode)}:`;
+    const info = tplRegionImage(tplSlot, tplMode);
+    document.getElementById('tplRegionImgName').textContent =
+        info ? (info.original_name || 'attached') : 'none';
+}
+
+function getRegionImg(slot, mode) {
+    if (!tplRegionImage(slot, mode)) return null;
+    const key = `${slot}/${mode}`;
+    let img = _regionImgCache[key];
+    const url = `${API}/api/templates/${tplId}/region-image?slot=${slot}&region=${encodeURIComponent(mode)}&t=${_regionImgBust}`;
+    if (!img || img._url !== url) {
+        img = new Image();
+        img._url = url;
+        img.onload = () => drawTplCanvas();
+        img.src = url;
+        _regionImgCache[key] = img;
+    }
+    return img.complete && img.naturalWidth ? img : null;
+}
+
+async function uploadTplRegionImage() {
+    if (!tplId) { logMsg($('#tLog'), 'Select a template first'); return; }
+    const fileEl = document.getElementById('tplRegionImgFile');
+    const f = fileEl?.files[0];
+    if (!f) { logMsg($('#tLog'), 'Pick an image file first'); return; }
+    const fd = new FormData();
+    fd.append('file', f);
+    try {
+        const r = await fetch(API+`/api/templates/${tplId}/region-image?slot=${tplSlot}&region=${encodeURIComponent(tplMode)}`, { method: 'POST', body: fd });
+        const j = await r.json();
+        if (j.status !== 'ok') { logMsg($('#tLog'), `Image error: ${j.error || 'unknown'}`); return; }
+        tplRegions.images = (j.template.regions || {}).images || {};
+        _regionImgBust++;
+        fileEl.value = '';
+        updateTplRegionImgBar();
+        drawTplCanvas();
+        logMsg($('#tLog'), `Image attached to R${tplSlot+1} ${labelFor(tplMode)} — Apply Layout to place it in OBS`);
+    } catch(e) { logMsg($('#tLog'), `Image error: ${e.message}`); }
+}
+
+async function removeTplRegionImage() {
+    if (!tplId) return;
+    const info = tplRegionImage(tplSlot, tplMode);
+    if (!info) { logMsg($('#tLog'), 'No image attached to this region'); return; }
+    if (!confirm(`Remove the ${labelFor(tplMode)} image for Racer ${tplSlot+1}?`)) return;
+    try {
+        const r = await apiDelete(`/api/templates/${tplId}/region-image?slot=${tplSlot}&region=${encodeURIComponent(tplMode)}`);
+        if (r.status !== 'ok') { logMsg($('#tLog'), `Image error: ${r.error || 'unknown'}`); return; }
+        tplRegions.images = (r.template.regions || {}).images || {};
+        _regionImgBust++;
+        delete _regionImgCache[`${tplSlot}/${tplMode}`];
+        updateTplRegionImgBar();
+        drawTplCanvas();
+        logMsg($('#tLog'), `Removed R${tplSlot+1} ${labelFor(tplMode)} image — re-apply the layout to update OBS`);
+    } catch(e) { logMsg($('#tLog'), `Image error: ${e.message}`); }
 }
 
 function clearTplRegion() {
@@ -1491,18 +1987,97 @@ function clearTplRegion() {
     saveTplRegions();
 }
 
-/* ---- Text element management ---- */
+/* ---- Text element management ----
+   Text is rendered on the canvas exactly the way OBS renders it: at the
+   given font size, top-left anchored, no stretching.  The hit box used for
+   dragging is the measured text bounds (stored per element during draw). */
+function nextTextId() {
+    let mx = 0;
+    for (const t of (tplRegions.texts || [])) {
+        const m = /^txt(\d+)$/.exec(t.id || '');
+        if (m) mx = Math.max(mx, +m[1] + 1);
+    }
+    return `txt${mx}`;
+}
+
 function addTplText() {
     if (!tplRegions.texts) tplRegions.texts = [];
-    const idx = tplRegions.texts.length;
     tplRegions.texts.push({
-        id: `txt${idx}`, text: `Text ${idx + 1}`,
-        x: 50, y: 50, width: 200, height: 50,
-        font_size: 36, color: '#ffffff',
+        id: nextTextId(), text: 'New Text',
+        x: 50, y: 50,
+        font_size: 48, color: '#ffffff',
+        font: 'Arial', align: 'left',
     });
     renderTplTextList();
     drawTplCanvas();
     saveTplRegions();
+}
+
+// Enter applies the text, Shift+Enter inserts a newline
+function tplTextKey(e, idx) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        updateTplText(idx, 'text', e.target.value);
+        e.target.blur();
+    }
+}
+
+/* ---- Fonts ----
+   OBS renders with the OBS machine's fonts; the preview uses this browser's.
+   queryLocalFonts (Chrome/Edge) gives the real installed list — on the usual
+   same-machine setup that IS the OBS font list. */
+const STATIC_FONTS = ['Arial','Arial Black','Comic Sans MS','Consolas','Courier New',
+    'Georgia','Impact','Segoe UI','Tahoma','Times New Roman','Trebuchet MS','Verdana'];
+let systemFonts = [];
+
+function fontOptions() { return systemFonts.length ? systemFonts : STATIC_FONTS; }
+
+function fontAvailable(face) {
+    try { return document.fonts.check(`16px "${String(face).replace(/"/g, '')}"`); }
+    catch { return true; }
+}
+
+async function loadSystemFonts(fromClick = false) {
+    if (!('queryLocalFonts' in window)) {
+        if (fromClick) logMsg($('#tLog'), 'This browser cannot list system fonts (needs Chrome/Edge) — using the common-fonts list; type any name via “Other…”.');
+        return;
+    }
+    try {
+        if (!fromClick) {
+            // Only auto-load when permission was already granted — don't prompt
+            const st = await navigator.permissions.query({ name: 'local-fonts' }).catch(() => null);
+            if (!st || st.state !== 'granted') return;
+        }
+        const fonts = await window.queryLocalFonts();
+        systemFonts = [...new Set(fonts.map(f => f.family))].sort((a, b) => a.localeCompare(b));
+        renderTplTextList();
+        logMsg($('#tLog'), `Loaded ${systemFonts.length} fonts installed in this browser's system`);
+    } catch (e) { if (fromClick) logMsg($('#tLog'), `Font list error: ${e.message}`); }
+}
+
+function fontSelectHtml(i, t) {
+    const cur = t.font || 'Arial';
+    const opts = fontOptions();
+    const list = opts.includes(cur) ? opts : [cur, ...opts];
+    const avail = fontAvailable(cur);
+    const warn = avail ? '' : `<span title="'${esc(cur)}' is not installed in this browser — size and shape here are approximate (OBS uses its own machine's fonts)" style="cursor:help">⚠️</span>`;
+    return `<div style="display:flex;gap:2px;align-items:center">
+        <select onchange="tplFontChange(${i}, this)" style="margin:0;max-width:130px">
+            ${list.map(f => `<option value="${esc(f)}"${f === cur ? ' selected' : ''}${fontAvailable(f) ? '' : ' style="color:var(--text2)"'}>${esc(f)}</option>`).join('')}
+            <option value="__other">Other…</option>
+        </select>${warn}</div>`;
+}
+
+function tplFontChange(i, sel) {
+    if (sel.value === '__other') {
+        const name = prompt('Font family name (must be installed on the OBS machine):',
+                            tplRegions.texts[i]?.font || 'Arial');
+        if (name) updateTplText(i, 'font', name.trim());
+        renderTplTextList();
+        return;
+    }
+    updateTplText(i, 'font', sel.value);
+    renderTplTextList();   // refresh the availability warning
 }
 
 function removeTplText(idx) {
@@ -1523,12 +2098,21 @@ function renderTplTextList() {
     const container = document.getElementById('tplTextList');
     if (!container) return;
     const texts = tplRegions.texts || [];
-    if (!texts.length) { container.innerHTML = '<div style="font-size:11px;color:var(--text2)">No text elements yet.</div>'; return; }
+    if (!texts.length) { container.innerHTML = '<div style="font-size:11px;color:var(--text2)">No text elements yet — click + Add Text.</div>'; return; }
     container.innerHTML = texts.map((t, i) => `
         <div style="display:flex;gap:6px;align-items:end;margin-bottom:4px;flex-wrap:wrap">
-            <div style="flex:1"><label style="font-size:10px">Text</label><input value="${t.text.replace(/"/g,'&quot;')}" onchange="updateTplText(${i},'text',this.value)" style="margin:0"></div>
-            <div style="flex:0 0 60px"><label style="font-size:10px">Size</label><input type="number" value="${t.font_size}" min="8" max="200" onchange="updateTplText(${i},'font_size',+this.value)" style="margin:0"></div>
-            <div style="flex:0 0 44px"><label style="font-size:10px">Color</label><input type="color" value="${t.color}" onchange="updateTplText(${i},'color',this.value)" style="margin:0;padding:2px;height:30px"></div>
+            <div style="flex:2;min-width:180px"><label style="font-size:10px">Text (Enter = apply, Shift+Enter = new line)</label><textarea rows="1" onkeydown="tplTextKey(event,${i})" onchange="updateTplText(${i},'text',this.value)" style="margin:0;width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;min-height:31px">${esc(t.text)}</textarea></div>
+            <div style="flex:0 0 150px"><label style="font-size:10px">Font</label>${fontSelectHtml(i, t)}</div>
+            <div style="flex:0 0 78px"><label style="font-size:10px">Align</label>
+                <select onchange="updateTplText(${i},'align',this.value)" style="margin:0">
+                    <option value="left"${(t.align||'left')==='left'?' selected':''}>Left</option>
+                    <option value="center"${t.align==='center'?' selected':''}>Center</option>
+                    <option value="right"${t.align==='right'?' selected':''}>Right</option>
+                </select></div>
+            <div style="flex:0 0 60px"><label style="font-size:10px">Size</label><input type="number" value="${Number(t.font_size)||36}" min="8" max="400" onchange="updateTplText(${i},'font_size',+this.value||36)" style="margin:0"></div>
+            <div style="flex:0 0 60px"><label style="font-size:10px">X</label><input type="number" value="${Math.round(t.x)||0}" onchange="updateTplText(${i},'x',+this.value||0)" style="margin:0"></div>
+            <div style="flex:0 0 60px"><label style="font-size:10px">Y</label><input type="number" value="${Math.round(t.y)||0}" onchange="updateTplText(${i},'y',+this.value||0)" style="margin:0"></div>
+            <div style="flex:0 0 44px"><label style="font-size:10px">Color</label><input type="color" value="${esc(t.color)}" onchange="updateTplText(${i},'color',this.value)" style="margin:0;padding:2px;height:30px"></div>
             <button class="br btn-sm" onclick="removeTplText(${i})">✕</button>
         </div>
     `).join('');
@@ -1538,34 +2122,66 @@ async function uploadTemplate() {
     const name = $('#tplName').value.trim() || 'Untitled';
     const fileInput = document.getElementById('tplFile');
     const file = fileInput.files[0];
-    if (!file) { logMsg($('#tLog'), 'Select an image file'); return; }
+    if (!file) { logMsg($('#tLog'), 'Select an image file — or use ➕ Blank for a layout without artwork'); return; }
     const fd = new FormData();
     fd.append('file', file);
     try {
         const r = await fetch(API+`/api/templates/upload?name=${encodeURIComponent(name)}`, { method: 'POST', body: fd });
         const j = await r.json();
-        if (j.status === 'ok') { logMsg($('#tLog'), `Uploaded: ${j.template.name}`); refreshTemplates(); }
+        if (j.status === 'ok') { logMsg($('#tLog'), `Uploaded: ${j.template.name}`); refreshTemplates(j.template.id); }
         else logMsg($('#tLog'), `Error: ${j.error || 'unknown'}`);
     } catch(e) { logMsg($('#tLog'), `Upload error: ${e.message}`); }
 }
 
-async function refreshTemplates() {
+async function createBlankTemplate() {
+    const name = $('#tplName').value.trim() || 'Blank Layout';
+    let w = 1920, h = 1080;
+    try {
+        const vs = await apiGet('/api/obs/video-settings');
+        if (vs.status === 'ok') { w = vs.baseWidth; h = vs.baseHeight; }
+    } catch {}
+    try {
+        const r = await apiPost('/api/templates/blank', { name, width: w, height: h });
+        if (r.status === 'ok') {
+            logMsg($('#tLog'), `Created blank ${w}×${h} template "${name}"`);
+            refreshTemplates(r.template.id);
+        } else logMsg($('#tLog'), `Error: ${r.error || 'unknown'}`);
+    } catch(e) { logMsg($('#tLog'), `Error: ${e.message}`); }
+}
+
+async function refreshTemplates(selectId=null) {
     try {
         const r = await apiGet('/api/templates');
         const sel = $('#tplSelect');
         sel.innerHTML = '<option value="">— Select —</option>';
         (r.templates||[]).forEach(t => {
             const o = document.createElement('option');
-            o.value = t.id; o.textContent = `${t.name} (${(t.created_at||'').split('.')[0]})`;
+            o.value = t.id;
+            o.textContent = `${t.name}${t.image_path ? '' : ' (blank)'} (${(t.created_at||'').split('.')[0]})`;
             sel.appendChild(o);
         });
-        // Restore last-used template from server
-        const at = await apiGet('/api/active-template');
-        if (at.template_id) {
-            sel.value = String(at.template_id);
+        let want = selectId;
+        if (want == null) {
+            // Restore last-used template from server
+            const at = await apiGet('/api/active-template');
+            want = at.template_id;
+        }
+        if (want) {
+            sel.value = String(want);
             if (sel.value) loadTemplate();
         }
     } catch(e) { logMsg($('#tLog'), `Error: ${e.message}`); }
+}
+
+function sizeTplCanvas() {
+    const canvas = $('#tplCanvas');
+    const cw = $('#tplContainer').clientWidth - 2;
+    const scale = Math.min(1, cw / tplImgW);
+    canvas.width = Math.floor(tplImgW * scale);
+    canvas.height = Math.floor(tplImgH * scale);
+    canvas.style.display = 'block';
+    $('#tplPlaceholder').style.display = 'none';
+    $('#tplCanvasInfo').textContent = `Canvas: ${tplImgW}×${tplImgH}`;
 }
 
 async function loadTemplate() {
@@ -1580,17 +2196,14 @@ async function loadTemplate() {
         const regions = r.template.regions || {};
         if (regions.slots) {
             // New format: { slots: { "0": {...}, "1": {...} }, num_slots: N, texts: [...] }
-            tplRegions = { slots: {}, num_slots: regions.num_slots || 2, texts: regions.texts || [] };
+            tplRegions = { slots: {}, num_slots: regions.num_slots || 2, texts: regions.texts || [], canvas: regions.canvas, images: regions.images || {} };
             for (const [k, v] of Object.entries(regions.slots)) {
-                tplRegions.slots[k] = {
-                    game: v.game || null,
-                    tracker: v.tracker || null,
-                    timer: v.timer || null,
-                };
+                // Spread keeps custom-region rects; base keys always present
+                tplRegions.slots[k] = { game: null, tracker: null, timer: null, ...v };
             }
         } else {
             // Legacy flat format — put everything in slot 0
-            tplRegions = { slots: { "0": emptySlotRegions(), "1": emptySlotRegions() }, num_slots: 2, texts: [] };
+            tplRegions = { slots: { "0": emptySlotRegions(), "1": emptySlotRegions() }, num_slots: 2, texts: [], canvas: regions.canvas, images: {} };
             for (const m of ['game','tracker','timer']) {
                 if (regions[m]) {
                     // Convert x1/y1/x2/y2 to x/y/width/height
@@ -1608,48 +2221,74 @@ async function loadTemplate() {
             if (!tplRegions.slots[String(i)]) tplRegions.slots[String(i)] = emptySlotRegions();
         }
         tplSlot = 0;
+        _regionImgCache = {};   // per-template preview cache
+        _regionImgBust++;
         renderTplSlotBtns();
         renderTplTextList();
+        updateTplRegionImgBar();
         setNumSlots(tplRegions.num_slots);
 
-        const img = new Image();
-        img.onload = () => {
-            tplImg = img; tplImgW = img.naturalWidth; tplImgH = img.naturalHeight;
-            const canvas = $('#tplCanvas');
-            const cw = $('#tplContainer').clientWidth - 2;
-            const scale = Math.min(1, cw / tplImgW);
-            canvas.width = Math.floor(tplImgW * scale);
-            canvas.height = Math.floor(tplImgH * scale);
-            canvas.style.display = 'block';
-            $('#tplPlaceholder').style.display = 'none';
+        if (r.template.image_b64) {
+            const img = new Image();
+            img.onload = () => {
+                tplImg = img; tplImgW = img.naturalWidth; tplImgH = img.naturalHeight;
+                sizeTplCanvas();
+                drawTplCanvas();
+            };
+            img.src = 'data:image/jpeg;base64,' + r.template.image_b64;
+        } else {
+            // Blank template — no artwork, draw on a bare canvas
+            tplImg = null;
+            const c = tplRegions.canvas || {};
+            tplImgW = c.width || 1920;
+            tplImgH = c.height || 1080;
+            sizeTplCanvas();
             drawTplCanvas();
-        };
-        img.src = 'data:image/jpeg;base64,' + r.template.image_b64;
-        logMsg($('#tLog'), `Loaded template: ${r.template.name} (${tplRegions.num_slots} slots)`);
+        }
+        logMsg($('#tLog'), `Loaded template: ${r.template.name} (${tplRegions.num_slots} slots${r.template.image_b64 ? '' : ', no image'})`);
     } catch(e) { logMsg($('#tLog'), `Load error: ${e.message}`); }
 }
 
 async function deleteTemplate() {
     const id = parseInt($('#tplSelect').value);
     if (!id) return;
+    const name = $('#tplSelect').selectedOptions[0]?.textContent || 'this template';
+    if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
     try {
         await apiDelete(`/api/templates/${id}`);
-        tplId = null; tplImg = null;
+        tplId = null; tplImg = null; tplImgW = 0; tplImgH = 0;
+        _regionImgCache = {};
+        updateTplRegionImgBar();
         $('#tplCanvas').style.display = 'none';
         $('#tplPlaceholder').style.display = 'block';
+        $('#tplCanvasInfo').textContent = '';
         refreshTemplates();
     } catch(e) { logMsg($('#tLog'), `Delete error: ${e.message}`); }
 }
 
-// Slot-specific color: slightly offset the hue per slot for visibility
-const SLOT_COLORS = ['#fff', '#ff0', '#0ff', '#f0f', '#f80', '#8f0'];
-
 function drawTplCanvas() {
     const canvas = $('#tplCanvas');
-    if (!canvas || !tplImg) return;
+    if (!canvas || (!tplImg && !tplImgW)) return;
     const ctx = canvas.getContext('2d');
     const cw = canvas.width, ch = canvas.height;
-    ctx.drawImage(tplImg, 0, 0, cw, ch);
+    if (tplImg) {
+        ctx.drawImage(tplImg, 0, 0, cw, ch);
+    } else {
+        // Blank template: dark canvas with a fine grid so positions read
+        // well (every 4th line is slightly stronger for orientation)
+        ctx.fillStyle = '#101018';
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.lineWidth = 1;
+        const step = cw / 64;
+        for (let gx = step, i = 1; gx < cw; gx += step, i++) {
+            ctx.strokeStyle = i % 4 ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.09)';
+            ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, ch); ctx.stroke();
+        }
+        for (let gy = step, i = 1; gy < ch; gy += step, i++) {
+            ctx.strokeStyle = i % 4 ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.09)';
+            ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cw, gy); ctx.stroke();
+        }
+    }
     const sx = cw / tplImgW, sy = ch / tplImgH;
 
     // Draw ALL slots' regions (dimmed for non-active slots)
@@ -1660,13 +2299,15 @@ function drawTplCanvas() {
 
         for (const [mode, rect] of Object.entries(slotData)) {
             if (!rect) continue;
-            const col = COLORS[mode];
-            if (!col) continue;
+            if (mode !== 'game' && mode !== 'tracker' && mode !== 'timer' && !customRegions.includes(mode)) continue;
+            const col = colorFor(mode);
             const rx = rect.x * sx, ry = rect.y * sy;
             const rw = rect.width * sx, rh = rect.height * sy;
 
             ctx.globalAlpha = alpha;
-            ctx.fillStyle = col.fill; ctx.fillRect(rx, ry, rw, rh);
+            const rimg = getRegionImg(s, mode);
+            if (rimg) ctx.drawImage(rimg, rx, ry, rw, rh);
+            else { ctx.fillStyle = col.fill; ctx.fillRect(rx, ry, rw, rh); }
             ctx.strokeStyle = col.stroke; ctx.lineWidth = isActive ? 2 : 1;
             ctx.setLineDash(isActive && mode === tplMode ? [] : [4, 4]);
             ctx.strokeRect(rx, ry, rw, rh); ctx.setLineDash([]);
@@ -1674,7 +2315,7 @@ function drawTplCanvas() {
             // Label: "R1 Game", "R2 Tracker", etc.
             ctx.fillStyle = col.stroke;
             ctx.font = `bold ${isActive ? 12 : 10}px system-ui`;
-            ctx.fillText(`R${s+1} ${MODE_LABEL[mode]}`, rx + 4, ry + 14);
+            ctx.fillText(`R${s+1} ${labelFor(mode)}`, rx + 4, ry + 14);
 
             // Corner handles for active slot regions
             if (isActive) {
@@ -1689,88 +2330,118 @@ function drawTplCanvas() {
         }
     }
 
-    // Draw in-progress drag rectangle
+    // Draw in-progress drag rectangle (image coords → bitmap pixels)
     if (tplAction && tplAction.type === 'draw') {
-        const col = COLORS[tplMode];
+        const col = colorFor(tplMode);
         if (col) {
-            const rx = Math.min(tplAction.startCx, tplAction.currentCx);
-            const ry = Math.min(tplAction.startCy, tplAction.currentCy);
-            const rw = Math.abs(tplAction.currentCx - tplAction.startCx);
-            const rh = Math.abs(tplAction.currentCy - tplAction.startCy);
+            const rx = Math.min(tplAction.startIx, tplAction.currentIx) * sx;
+            const ry = Math.min(tplAction.startIy, tplAction.currentIy) * sy;
+            const rw = Math.abs(tplAction.currentIx - tplAction.startIx) * sx;
+            const rh = Math.abs(tplAction.currentIy - tplAction.startIy) * sy;
             ctx.fillStyle = col.fill; ctx.fillRect(rx, ry, rw, rh);
             ctx.strokeStyle = col.stroke; ctx.lineWidth = 2;
             ctx.strokeRect(rx, ry, rw, rh);
         }
     }
 
-    // Draw text elements as bounded rectangles
-    for (const [i, t] of (tplRegions.texts || []).entries()) {
-        const tx = t.x * sx, ty = t.y * sy;
-        const tw = (t.width || 100) * sx, th = (t.height || 50) * sy;
-
-        ctx.globalAlpha = tplMode === 'text' ? 1.0 : 0.5;
-        // Bounding box
-        ctx.fillStyle = 'rgba(0,210,210,0.12)';
-        ctx.fillRect(tx, ty, tw, th);
-        ctx.strokeStyle = '#00d2d2';
-        ctx.lineWidth = tplMode === 'text' ? 2 : 1;
-        ctx.setLineDash(tplMode === 'text' ? [] : [3, 3]);
-        ctx.strokeRect(tx, ty, tw, th);
-        ctx.setLineDash([]);
-
-        // Text content – match OBS FreeType2 "Sans Serif" (normal weight)
-        ctx.fillStyle = t.color || '#ffffff';
-        const fontSize = Math.max(8, Math.round((t.font_size || 36) * sy));
-        ctx.font = `${fontSize}px sans-serif`;
-        ctx.textBaseline = 'top';
-        ctx.fillText(t.text || '', tx + 2, ty + 2);
-        ctx.textBaseline = 'alphabetic';
-
-        // Corner handles (in text mode)
-        if (tplMode === 'text') {
-            const corners = [[tx, ty], [tx+tw, ty], [tx, ty+th], [tx+tw, ty+th]];
-            ctx.fillStyle = '#fff'; ctx.strokeStyle = '#00d2d2'; ctx.lineWidth = 2;
-            for (const [cx, cy] of corners) {
-                ctx.fillRect(cx - 4, cy - 4, 8, 8);
-                ctx.strokeRect(cx - 4, cy - 4, 8, 8);
-            }
-        }
-        ctx.globalAlpha = 1.0;
+    // Draw text elements exactly as OBS renders them: top-left anchored at
+    // (x,y), multi-line, aligned within the block's widest line.
+    for (const t of (tplRegions.texts || [])) {
+        drawTplText(ctx, t, sx, sy);
     }
 }
 
+function tplFontFamily(t) {
+    const face = String(t.font || 'Arial').replace(/["']/g, '');
+    return `"${face}", Arial, sans-serif`;
+}
+
+// OBS's GDI+ text source sizes fonts by the GDI *cell height* (ascent +
+// descent), while canvas/CSS font-size is the *em* size — for Arial that
+// makes GDI text ~11% smaller at the same number.  Convert the requested
+// size to the canvas px that visually matches OBS.  FreeType2 (Linux/mac
+// OBS) sizes by em, so no correction there.
+function obsDrawPx(ctx, family, px) {
+    if (!_obsTextKind || !_obsTextKind.startsWith('text_gdiplus')) return px;
+    ctx.font = `${px}px ${family}`;
+    const m = ctx.measureText('Hg');
+    const cell = (m.fontBoundingBoxAscent || 0) + (m.fontBoundingBoxDescent || 0);
+    return cell > 0 ? px * (px / cell) : px * 0.9;
+}
+
+function drawTplText(ctx, t, sx, sy) {
+    const tx = t.x * sx, ty = t.y * sy;
+    const family = tplFontFamily(t);
+    const basePx = Math.max(1, (Number(t.font_size) || 36) * sy);
+    const drawPx = obsDrawPx(ctx, family, basePx);
+    ctx.font = `${drawPx}px ${family}`;
+    ctx.textBaseline = 'top';
+
+    const probe = ctx.measureText('Hg');
+    const lineH = ((probe.fontBoundingBoxAscent || 0) + (probe.fontBoundingBoxDescent || 0)) || drawPx * 1.2;
+    const lines = String(t.text || '').split('\n');
+    const widths = lines.map(l => ctx.measureText(l).width);
+    const tw = Math.max(...widths, 12 * sx);
+    const th = lines.length * lineH;
+
+    // Remember the rendered bounds (canvas coords) for drag hit-testing
+    t._box = { x: tx, y: ty, w: tw, h: th };
+
+    ctx.globalAlpha = tplMode === 'text' ? 1.0 : 0.75;
+    if (tplMode === 'text') {
+        ctx.fillStyle = 'rgba(0,210,210,0.10)';
+        ctx.fillRect(tx - 2, ty - 2, tw + 4, th + 4);
+        ctx.strokeStyle = '#00d2d2';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(tx - 2, ty - 2, tw + 4, th + 4);
+        ctx.setLineDash([]);
+    }
+    ctx.fillStyle = t.color || '#ffffff';
+    const align = t.align || 'left';
+    lines.forEach((line, i) => {
+        const off = align === 'center' ? (tw - widths[i]) / 2
+                  : align === 'right'  ? (tw - widths[i]) : 0;
+        ctx.fillText(line, tx + off, ty + i * lineH);
+    });
+    ctx.textBaseline = 'alphabetic';
+    ctx.globalAlpha = 1.0;
+}
+
 function tplCanvasToImage(canvas, e) {
+    // rect (CSS pixels) can differ from the canvas bitmap size when the
+    // browser scales the element (max-width:100%), so map via rect.
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    const ix = Math.round(cx / canvas.width * tplImgW);
-    const iy = Math.round(cy / canvas.height * tplImgH);
+    const ix = Math.round(cx / rect.width * tplImgW);
+    const iy = Math.round(cy / rect.height * tplImgH);
     return { cx, cy, ix: Math.max(0, Math.min(tplImgW-1, ix)), iy: Math.max(0, Math.min(tplImgH-1, iy)) };
 }
 
 /* ---- Hit-testing for template regions ---- */
 function hitTplRegion(canvas, e) {
-    if (!tplImg) return null;
+    if (!tplImgW) return null;
     const sx = canvas.width / tplImgW, sy = canvas.height / tplImgH;
     const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    // Mouse position in canvas *bitmap* pixels (regions and _box caches are
+    // in bitmap space; the element may be CSS-scaled)
+    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const my = (e.clientY - rect.top) * (canvas.height / rect.height);
     const H = 8; // handle hit radius
 
-    // Check text elements first (rendered on top)
+    // Check text elements first (rendered on top) — hit box is the measured
+    // text bounds cached during draw. Text moves only (font size sets size).
     for (let i = (tplRegions.texts || []).length - 1; i >= 0; i--) {
         const t = tplRegions.texts[i];
-        const rx = t.x * sx, ry = t.y * sy;
-        const rw = (t.width || 100) * sx, rh = (t.height || 50) * sy;
-        for (const [name, cx2, cy2] of [['tl',rx,ry],['tr',rx+rw,ry],['bl',rx,ry+rh],['br',rx+rw,ry+rh]]) {
-            if (Math.abs(mx - cx2) < H && Math.abs(my - cy2) < H)
-                return { kind: 'text', idx: i, hit: name };
-        }
-        if (mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh)
+        const b = t._box;
+        if (!b) continue;
+        if (mx >= b.x - 4 && mx <= b.x + b.w + 4 && my >= b.y - 4 && my <= b.y + b.h + 4)
             return { kind: 'text', idx: i, hit: 'body' };
     }
 
     // Check active slot regions (reverse order so topmost drawn is hit first)
     const slotData = tplRegions.slots[String(tplSlot)] || {};
-    for (const mode of ['timer', 'tracker', 'game']) {
+    for (const mode of [...allRegionModes()].reverse()) {
         const r = slotData[mode];
         if (!r) continue;
         const rx = r.x * sx, ry = r.y * sy;
@@ -1788,7 +2459,7 @@ function hitTplRegion(canvas, e) {
 /* ---- Template canvas event handlers ---- */
 function onTplMouseDown(e) {
     const tc = $('#tplCanvas');
-    if (!tplImg) return;
+    if (!tplImgW) return;
     e.preventDefault();
     const { cx, cy, ix, iy } = tplCanvasToImage(tc, e);
     const hit = hitTplRegion(tc, e);
@@ -1797,7 +2468,7 @@ function onTplMouseDown(e) {
         let origRect;
         if (hit.kind === 'text') {
             const t = tplRegions.texts[hit.idx];
-            origRect = { x: t.x, y: t.y, width: t.width || 100, height: t.height || 50 };
+            origRect = { x: t.x, y: t.y, width: 0, height: 0 };
         } else {
             origRect = { ...tplRegions.slots[String(hit.slotIdx)][hit.mode] };
         }
@@ -1820,7 +2491,7 @@ function onTplMouseDown(e) {
 
 function onTplMouseMove(e) {
     const tc = $('#tplCanvas');
-    if (!tplImg) return;
+    if (!tplImgW) return;
     const { cx, cy, ix, iy } = tplCanvasToImage(tc, e);
 
     if (!tplAction) {
@@ -1854,12 +2525,7 @@ function onTplMouseMove(e) {
         else if (c === 'bl') { x1 = ix; y2 = iy; }
         else if (c === 'br') { x2 = ix; y2 = iy; }
         const nr = { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) };
-        if (tplAction.target.kind === 'text') {
-            const t = tplRegions.texts[tplAction.target.idx];
-            t.x = nr.x; t.y = nr.y; t.width = nr.width; t.height = nr.height;
-        } else {
-            tplRegions.slots[String(tplAction.target.slotIdx)][tplAction.target.mode] = nr;
-        }
+        tplRegions.slots[String(tplAction.target.slotIdx)][tplAction.target.mode] = nr;
         drawTplCanvas();
     } else if (tplAction.type === 'draw') {
         tplAction.currentIx = ix; tplAction.currentIy = iy;
@@ -1880,7 +2546,7 @@ function onTplMouseUp(e) {
             const slotKey = String(tplSlot);
             if (!tplRegions.slots[slotKey]) tplRegions.slots[slotKey] = emptySlotRegions();
             tplRegions.slots[slotKey][tplMode] = { x, y, width: w, height: h };
-            logMsg($('#tLog'), `R${tplSlot+1} ${MODE_LABEL[tplMode]}: (${x},${y}) ${w}×${h}`);
+            logMsg($('#tLog'), `R${tplSlot+1} ${labelFor(tplMode)}: (${x},${y}) ${w}×${h}`);
         }
     }
 
@@ -1888,10 +2554,11 @@ function onTplMouseUp(e) {
         const t = tplAction.target;
         if (t.kind === 'text') {
             const txt = tplRegions.texts[t.idx];
-            logMsg($('#tLog'), `Text "${txt.text}": (${Math.round(txt.x)},${Math.round(txt.y)}) ${Math.round(txt.width)}×${Math.round(txt.height)}`);
+            logMsg($('#tLog'), `Text "${txt.text}": moved to (${Math.round(txt.x)},${Math.round(txt.y)})`);
+            renderTplTextList();
         } else {
             const r = tplRegions.slots[String(t.slotIdx)][t.mode];
-            logMsg($('#tLog'), `R${t.slotIdx+1} ${MODE_LABEL[t.mode]}: (${Math.round(r.x)},${Math.round(r.y)}) ${Math.round(r.width)}×${Math.round(r.height)}`);
+            logMsg($('#tLog'), `R${t.slotIdx+1} ${labelFor(t.mode)}: (${Math.round(r.x)},${Math.round(r.y)}) ${Math.round(r.width)}×${Math.round(r.height)}`);
         }
     }
 
@@ -1901,12 +2568,19 @@ function onTplMouseUp(e) {
 }
 
 function onTplMouseLeave() {
-    if (tplAction) { tplAction = null; drawTplCanvas(); }
+    if (tplAction) { tplAction = null; drawTplCanvas(); saveTplRegions(); }
+}
+
+function serializableTplRegions() {
+    // Strip the transient _box hit-test cache from text elements and record
+    // the canvas size so the backend can rescale to the OBS resolution.
+    const texts = (tplRegions.texts || []).map(({ _box, ...t }) => t);
+    return { ...tplRegions, texts, canvas: { width: tplImgW || 1920, height: tplImgH || 1080 } };
 }
 
 async function saveTplRegions() {
     if (!tplId) return;
-    try { await apiPut(`/api/templates/${tplId}/regions`, { regions: tplRegions }); }
+    try { await apiPut(`/api/templates/${tplId}/regions`, { regions: serializableTplRegions() }); }
     catch(e) { logMsg($('#tLog'), `Save error: ${e.message}`); }
 }
 
@@ -1915,9 +2589,10 @@ async function applyTemplateToOBS() {
     try {
         const r = await apiPost(`/api/templates/${tplId}/apply`, {});
         if (r.status === 'ok') {
-            logMsg($('#tLog'), `Applied template to OBS: ${(r.applied||[]).join(', ')}`);
+            logMsg($('#tLog'), `Applied template to OBS: ${(r.applied||[]).join(', ') || 'nothing (start feeds first)'}`);
         } else {
             logMsg($('#tLog'), `Apply error: ${r.error || 'unknown'}`);
+            toast(`Template apply failed: ${r.error || 'unknown'}`);
         }
     } catch(e) { logMsg($('#tLog'), `Apply error: ${e.message}`); }
 }
@@ -1936,9 +2611,15 @@ document.addEventListener('DOMContentLoaded', () => {
    INIT
    ================================================================ */
 (async () => {
-    // Initialize default 2 slots and render all dynamic UI
+    // Custom region names drive the crop/template mode buttons — load first
+    await loadCustomRegions();
+
+    // Initialize slot count (restored from last session) and render all dynamic UI
+    let startSlots = 2;
+    try { startSlots = parseInt(localStorage.getItem('numSlots')) || 2; } catch {}
     ensureCropSlot(0); ensureCropSlot(1);
-    setNumSlots(2);
+    setNumSlots(startSlots);
+    renderRegionUI();
 
     // Check if there's an active template to set the slot count
     try {
@@ -1946,7 +2627,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (at.template_id && at.num_slots) setNumSlots(at.num_slots);
     } catch {}
 
-    try { const r = await apiGet('/api/obs/status'); if (r.connected) { $('#obsDot').className = 'dot on'; loadSc(); populateProjectorRes(); updateAudioCaptureUI(r.platform); } } catch {}
+    try {
+        const r = await apiGet('/api/obs/status');
+        if (r.connected) { setObsDot(true); loadSc(); populateProjectorRes(); applyObsStatus(r); updateStreamStatus(); syncAudioSoloState(); refreshSyncDelay(); }
+    } catch {}
     setCropMode('game');
     loadPresets();
     await refreshTemplates();

@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
+import re
 import shutil
 import subprocess
 import sys
@@ -55,12 +57,14 @@ from pydantic import BaseModel
 
 from .config import Config, load_config
 from .ingest import IngestManager
-from .obs_control import OBSController, SourceCrop
+from .obs_control import OBSController, OBSRequestError, SourceCrop
 from .presets import PresetStore
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _TEMPLATES_UPLOAD_DIR = _DATA_DIR / "template_images"
+_PRESET_IMAGES_DIR = _DATA_DIR / "preset_images"
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +161,12 @@ class PresetSaveRequest(BaseModel):
     game_crop: dict[str, int] | None = None
     tracker_crop: dict[str, int] | None = None
     timer_crop: dict[str, int] | None = None
+    # Custom named regions: {region_key: {x, y, width, height, source_width, source_height}}
+    extra_crops: dict[str, dict[str, int]] | None = None
+
+
+class CustomRegionRequest(BaseModel):
+    name: str
 
 
 class TemplateRegionsRequest(BaseModel):
@@ -167,6 +177,12 @@ class TemplateApplyRequest(BaseModel):
     scene_name: str = "Race Scene"
 
 
+class BlankTemplateRequest(BaseModel):
+    name: str = "Untitled"
+    width: int = 1920
+    height: int = 1080
+
+
 class TextSourceRequest(BaseModel):
     source_name: str
     text: str
@@ -174,8 +190,6 @@ class TextSourceRequest(BaseModel):
     color: str = "#ffffff"
     x: float = 0
     y: float = 0
-    width: float = 0
-    height: float = 0
 
 # ---------------------------------------------------------------------------
 # App globals (set during lifespan)
@@ -216,6 +230,81 @@ def _obs_image_path(path: str) -> str:
     return path
 
 
+_RESERVED_REGIONS = {"game", "tracker", "timer", "feed"}
+
+
+def _norm_region_key(name: str) -> str:
+    """Normalize a user-supplied region name to a lowercase key."""
+    return re.sub(r"[^a-z0-9_]", "", name.strip().lower().replace(" ", "_"))[:20]
+
+
+def _get_custom_regions() -> list[str]:
+    """User-defined region keys (lowercase), shared across all racer slots."""
+    raw = presets.get_setting("custom_regions")
+    if not raw:
+        return []
+    try:
+        return [k for k in json.loads(raw) if isinstance(k, str)]
+    except (ValueError, TypeError):
+        return []
+
+
+def _save_custom_regions(keys: list[str]) -> None:
+    presets.set_setting("custom_regions", json.dumps(keys))
+    obs.set_extra_regions([k.capitalize() for k in keys])
+
+
+async def _current_scene(default: str = RACE_SCENE) -> str:
+    """Current OBS program scene, or *default* if it can't be determined."""
+    try:
+        return await obs.get_current_scene() or default
+    except Exception:
+        return default
+
+
+async def _template_layout_args(tpl: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a template record into kwargs for ``obs.apply_template_layout``.
+
+    Determines the template's coordinate space (drawn-canvas size stored in
+    the regions, else the image's pixel size) so the layout can be rescaled
+    to the OBS canvas resolution.
+    """
+    regions = tpl.get("regions", {})
+    img_path = tpl.get("image_path", "")
+    obs_path: str | None = None
+    template_size: tuple[int, int] | None = None
+
+    if img_path and Path(img_path).exists():
+        try:
+            def _size(p: str = img_path) -> tuple[int, int]:
+                with Image.open(p) as im:
+                    return im.size
+            template_size = await asyncio.to_thread(_size)
+        except Exception:
+            template_size = None
+        obs_path = _obs_image_path(img_path)
+
+    canvas = regions.get("canvas") or {}
+    if canvas.get("width") and canvas.get("height"):
+        template_size = (int(canvas["width"]), int(canvas["height"]))
+
+    # Per-slot/region images, translated to host paths (existing files only)
+    region_images: dict[str, dict[str, str]] = {}
+    for slot_str, imgs in (regions.get("images") or {}).items():
+        for region, info in (imgs or {}).items():
+            path = (info or {}).get("path", "")
+            if path and Path(path).is_file():
+                region_images.setdefault(slot_str, {})[region] = _obs_image_path(path)
+
+    return {
+        "image_path": obs_path,
+        "slot_regions": regions.get("slots", {}),
+        "text_entries": regions.get("texts", []),
+        "template_size": template_size,
+        "region_images": region_images,
+    }
+
+
 async def _provision_running_feeds() -> None:
     """Create OBS scene + sources for every feed that is already running."""
     if not obs.connected:
@@ -244,6 +333,10 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     obs = OBSController(config)
     presets = PresetStore()
     _TEMPLATES_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    _PRESET_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Load user-defined custom regions so scene provisioning knows about them
+    obs.set_extra_regions([k.capitalize() for k in _get_custom_regions()])
 
     # Restore persisted active template
     saved_tpl = presets.get_setting("active_template_id")
@@ -278,10 +371,20 @@ app = FastAPI(title="Restreaming Automation API", version="0.1.0", lifespan=life
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # Wildcard origins must not be combined with credentials (browsers
+    # reject the combination, and this API has no cookie auth anyway)
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(OBSRequestError)
+async def obs_error_handler(request, exc: OBSRequestError):  # type: ignore[no-untyped-def]
+    """Turn OBS failures into structured 502s instead of bare 500s so the
+    dashboard can show the actual reason."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=502, content={"detail": str(exc)})
 
 # Serve the standalone dashboard at /dashboard
 if _STATIC_DIR.exists():
@@ -294,7 +397,7 @@ async def health_check() -> dict[str, Any]:
     return {
         "status": "ok",
         "obs_connected": obs.connected,
-        "active_feeds": len(ingest._feeds),
+        "active_feeds": len(ingest.feeds),
     }
 
 
@@ -315,7 +418,7 @@ async def broadcast(event: str, data: Any = None) -> None:
     import json
     msg = json.dumps({"event": event, "data": data})
     disconnected: set[WebSocket] = set()
-    for ws in _ws_clients:
+    for ws in list(_ws_clients):
         try:
             await ws.send_text(msg)
         except Exception:
@@ -364,18 +467,9 @@ async def ingest_start(req: IngestStartRequest) -> dict[str, Any]:
         if _active_template_id is not None:
             try:
                 tpl = presets.get_template(_active_template_id)
-                regions = tpl.get("regions", {})
-                slot_regions = regions.get("slots", {})
-                if slot_regions:
-                    img_path = tpl.get("image_path", "")
-                    if img_path and Path(img_path).exists():
-                        img_path = _obs_image_path(img_path)
-                    else:
-                        img_path = None
-                    text_entries = regions.get("texts", [])
-                    await obs.apply_template_layout(
-                        RACE_SCENE, img_path, slot_regions, text_entries,
-                    )
+                layout = await _template_layout_args(tpl)
+                if layout["slot_regions"]:
+                    await obs.apply_template_layout(RACE_SCENE, **layout)
                     log.info("Auto-applied template %d after feed start", _active_template_id)
             except Exception as exc:
                 log.warning("Failed to auto-apply template: %s", exc)
@@ -484,7 +578,15 @@ async def ingest_preview(slot: int) -> dict[str, Any]:
         return {"success": False, "error": "No feed running on this slot"}
 
     snapshot = feed.snapshot_path
-    if not snapshot.exists() or snapshot.stat().st_size == 0:
+    try:
+        st = snapshot.stat()
+    except OSError:
+        return {"success": False, "error": "Snapshot not available yet"}
+    if st.st_size == 0:
+        return {"success": False, "error": "Snapshot not available yet"}
+    # A file older than this feed is a leftover from a previous stream
+    # (e.g. after an unclean shutdown) — never show a stale frame.
+    if feed.started_at and st.st_mtime < feed.started_at:
         return {"success": False, "error": "Snapshot not available yet"}
 
     try:
@@ -557,7 +659,53 @@ async def obs_status() -> dict[str, Any]:
     resp: dict[str, Any] = {"connected": obs.connected}
     if obs.connected:
         resp["platform"] = obs.platform
+        try:
+            # Lets the dashboard mirror OBS's font-size semantics exactly
+            resp["text_kind"] = await obs.text_source_kind()
+        except Exception:
+            pass
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Custom crop regions (shared across all racer slots)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/custom-regions")
+async def list_custom_regions() -> dict[str, Any]:
+    return {"regions": _get_custom_regions()}
+
+
+@app.post("/api/custom-regions")
+async def add_custom_region(req: CustomRegionRequest) -> dict[str, Any]:
+    key = _norm_region_key(req.name)
+    if not key:
+        return {"status": "error", "error": "Name must contain letters/numbers"}
+    if key in _RESERVED_REGIONS:
+        return {"status": "error", "error": f"'{key}' is a reserved name"}
+    regions = _get_custom_regions()
+    if key in regions:
+        return {"status": "error", "error": f"Region '{key}' already exists"}
+    if len(regions) >= 5:
+        return {"status": "error", "error": "Maximum of 5 custom regions"}
+    regions.append(key)
+    _save_custom_regions(regions)
+    # Existing feeds need an extra scene item per racer for the new region
+    if obs.connected:
+        await _provision_running_feeds()
+    await broadcast("regions:changed", {"regions": regions})
+    return {"status": "ok", "regions": regions}
+
+
+@app.delete("/api/custom-regions/{name}")
+async def delete_custom_region(name: str) -> dict[str, Any]:
+    key = _norm_region_key(name)
+    regions = [r for r in _get_custom_regions() if r != key]
+    _save_custom_regions(regions)
+    if obs.connected:
+        await _provision_running_feeds()
+    await broadcast("regions:changed", {"regions": regions})
+    return {"status": "ok", "regions": regions}
 
 
 @app.post("/api/obs/init")
@@ -668,10 +816,22 @@ async def obs_stream_stop() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/obs/stream/status")
+async def obs_stream_status() -> dict[str, Any]:
+    """Return live-stream state (active, timecode, dropped frames)."""
+    if not obs.connected:
+        return {"status": "error", "error": "OBS not connected", "active": False}
+    try:
+        st = await obs.get_stream_status()
+        return {"status": "ok", **st}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "active": False}
+
+
 @app.get("/api/obs/scenes")
 async def obs_scenes() -> dict[str, Any]:
     scenes = await obs.get_scene_list()
-    return {"scenes": scenes}
+    return {"scenes": scenes, "current": await _current_scene(default="")}
 
 
 @app.get("/api/obs/sources")
@@ -685,6 +845,7 @@ async def obs_audio_switch(req: AudioSwitchRequest) -> dict[str, Any]:
     """Switch active audio to a specific racer slot (mutes all others).
     Use active_slot=-1 to mute all.
     """
+    failed: list[str] = []
     for slot in range(req.num_slots):
         source_name = f"Racer{slot + 1}_Feed"
         muted = (req.active_slot == -1) or (slot != req.active_slot)
@@ -692,8 +853,12 @@ async def obs_audio_switch(req: AudioSwitchRequest) -> dict[str, Any]:
             await obs.mute_input(source_name, muted)
         except Exception as exc:
             log.warning("Failed to set mute for '%s': %s", source_name, exc)
+            failed.append(source_name)
+    if len(failed) == req.num_slots:
+        return {"status": "error",
+                "error": f"No racer feeds found in OBS ({', '.join(failed)}) — start feeds first"}
     await broadcast("audio:switched", {"active_slot": req.active_slot})
-    return {"status": "ok", "active_slot": req.active_slot}
+    return {"status": "ok", "active_slot": req.active_slot, "failed": failed}
 
 
 @app.get("/api/obs/audio")
@@ -711,12 +876,18 @@ async def obs_audio_status(num_slots: int = 2) -> dict[str, Any]:
 
 
 @app.get("/api/obs/audio/mixer")
-async def obs_audio_mixer() -> dict[str, Any]:
-    """Return volume & mute status for all audio-capable inputs."""
+async def obs_audio_mixer(scope: str = "scene") -> dict[str, Any]:
+    """Return volume & mute status for audio-capable inputs.
+
+    ``scope=scene`` (default) limits the list to inputs that are part of the
+    current program scene plus OBS global audio inputs; ``scope=all`` returns
+    every audio input OBS knows about.
+    """
     if not obs.connected:
         return {"status": "error", "error": "OBS not connected", "inputs": []}
-    inputs = await obs.list_audio_inputs()
-    return {"status": "ok", "inputs": inputs}
+    scene = await _current_scene() if scope != "all" else None
+    inputs = await obs.list_audio_inputs(scene)
+    return {"status": "ok", "inputs": inputs, "scene": scene}
 
 
 @app.post("/api/obs/audio/volume")
@@ -802,10 +973,12 @@ async def obs_audio_devices() -> dict[str, Any]:
     probe_name = "_device_probe_tmp"
     kind = obs.audio_capture_kind()
     try:
-        # Create a hidden temporary source so we can list its device options
+        # Create a hidden temporary source so we can list its device options.
+        # Use the current program scene — it always exists, unlike Race Scene.
+        probe_scene = await _current_scene()
         try:
             await obs.request("CreateInput", {
-                "sceneName": RACE_SCENE,
+                "sceneName": probe_scene,
                 "inputName": probe_name,
                 "inputKind": kind,
                 "inputSettings": {},
@@ -828,6 +1001,44 @@ async def obs_audio_devices() -> dict[str, Any]:
             pass
 
 
+@app.get("/api/obs/audio/apps")
+async def obs_audio_apps() -> dict[str, Any]:
+    """List application windows available for Application Audio Capture
+    (Windows only).  OBS expects a full ``title:class:executable`` window
+    spec — a bare exe name silently matches nothing — so the dashboard
+    offers these as a dropdown.
+    """
+    if not obs.connected:
+        return {"status": "error", "error": "OBS not connected", "apps": []}
+    if obs.platform != "windows":
+        return {"status": "ok", "apps": []}
+    probe_name = "_app_probe_tmp"
+    probe_scene = await _current_scene()
+    try:
+        try:
+            await obs.request("CreateInput", {
+                "sceneName": probe_scene,
+                "inputName": probe_name,
+                "inputKind": "wasapi_process_output_capture",
+                "inputSettings": {},
+                "sceneItemEnabled": False,
+            })
+        except Exception:
+            pass  # may already exist from a previous failed cleanup
+        resp = await obs.request("GetInputPropertiesListPropertyItems", {
+            "inputName": probe_name,
+            "propertyName": "window",
+        })
+        return {"status": "ok", "apps": resp.get("propertyItems", [])}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "apps": []}
+    finally:
+        try:
+            await obs.request("RemoveInput", {"inputName": probe_name})
+        except Exception:
+            pass
+
+
 @app.post("/api/obs/text")
 async def obs_text_source(req: TextSourceRequest) -> dict[str, Any]:
     """Create or update a text source in the OBS scene."""
@@ -838,22 +1049,10 @@ async def obs_text_source(req: TextSourceRequest) -> dict[str, Any]:
             RACE_SCENE, req.source_name, req.text,
             font_size=req.font_size, color_hex=req.color,
         )
-        resp = await obs.request("GetSceneItemId", {
-            "sceneName": RACE_SCENE,
-            "sourceName": req.source_name,
-        })
-        transform: dict[str, Any] = {
+        await obs.set_scene_item_transform(RACE_SCENE, req.source_name, {
             "positionX": req.x,
             "positionY": req.y,
-        }
-        if req.width and req.height:
-            transform["boundsType"] = "OBS_BOUNDS_SCALE_INNER"
-            transform["boundsWidth"] = req.width
-            transform["boundsHeight"] = req.height
-        await obs.request("SetSceneItemTransform", {
-            "sceneName": RACE_SCENE,
-            "sceneItemId": resp["sceneItemId"],
-            "sceneItemTransform": transform,
+            "boundsType": "OBS_BOUNDS_NONE",
         })
     except Exception as exc:
         log.warning("Text source error: %s", exc)
@@ -885,20 +1084,87 @@ async def list_presets(channel: str = "") -> dict[str, Any]:
 
 @app.post("/api/presets")
 async def save_preset(req: PresetSaveRequest) -> dict[str, Any]:
+    extra = {k: v for k, v in (req.extra_crops or {}).items() if v} or None
     p = presets.save_preset(
         channel=req.channel,
         name=req.name,
         game_crop=req.game_crop,
         tracker_crop=req.tracker_crop,
         timer_crop=req.timer_crop,
+        extra_crops=extra,
     )
     return {"status": "ok", "preset": p.to_dict()}
 
 
 @app.delete("/api/presets/{preset_id}")
 async def delete_preset(preset_id: int) -> dict[str, Any]:
+    # Clean up any attached image files
+    try:
+        p = presets.get_preset(preset_id)
+        for info in (p.images or {}).values():
+            path = (info or {}).get("path", "")
+            if path:
+                Path(path).unlink(missing_ok=True)
+    except (KeyError, OSError):
+        pass
     ok = presets.delete_preset(preset_id)
     return {"status": "ok" if ok else "not_found"}
+
+
+@app.post("/api/presets/{preset_id}/image")
+async def upload_preset_image(
+    preset_id: int, region: str = "tracker", file: UploadFile = File(...),
+) -> dict[str, Any]:
+    """Attach an image to a preset for a region (e.g. a tracker placeholder,
+    or something personal to the racer).  Replaces any existing image for
+    that region."""
+    try:
+        p = presets.get_preset(preset_id)
+    except KeyError:
+        return {"status": "error", "error": "Preset not found"}
+    key = _norm_region_key(region)
+    if not key:
+        return {"status": "error", "error": "Invalid region"}
+    if not file.filename:
+        return {"status": "error", "error": "No file uploaded"}
+    ext = Path(file.filename).suffix.lower()
+    if ext not in _IMAGE_EXTS:
+        return {"status": "error", "error": "Only JPG/PNG/WebP images allowed"}
+
+    import uuid
+    dest = _PRESET_IMAGES_DIR / f"{uuid.uuid4().hex}{ext}"
+    _PRESET_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    content = await file.read()
+    await asyncio.to_thread(dest.write_bytes, content)
+
+    images = dict(p.images or {})
+    old = (images.get(key) or {}).get("path", "")
+    if old:
+        try:
+            Path(old).unlink(missing_ok=True)
+        except OSError:
+            pass
+    images[key] = {"path": str(dest), "original_name": file.filename}
+    p = presets.update_preset_images(preset_id, images)
+    return {"status": "ok", "preset": p.to_dict()}
+
+
+@app.delete("/api/presets/{preset_id}/image")
+async def delete_preset_image(preset_id: int, region: str) -> dict[str, Any]:
+    try:
+        p = presets.get_preset(preset_id)
+    except KeyError:
+        return {"status": "error", "error": "Preset not found"}
+    key = _norm_region_key(region)
+    images = dict(p.images or {})
+    info = images.pop(key, None)
+    if info and info.get("path"):
+        try:
+            Path(info["path"]).unlink(missing_ok=True)
+        except OSError:
+            pass
+    p = presets.update_preset_images(preset_id, images)
+    return {"status": "ok", "preset": p.to_dict()}
 
 
 @app.post("/api/presets/{preset_id}/apply")
@@ -928,10 +1194,12 @@ async def apply_preset(preset_id: int, slot: int = 0) -> dict[str, Any]:
         except Exception:
             pass
 
+    regions_map: dict[str, dict[str, int] | None] = {
+        "game": p.game_crop, "tracker": p.tracker_crop, "timer": p.timer_crop,
+        **(p.extra_crops or {}),
+    }
     applied = []
-    for region_name, crop_data in [
-        ("game", p.game_crop), ("tracker", p.tracker_crop), ("timer", p.timer_crop),
-    ]:
+    for region_name, crop_data in regions_map.items():
         if not crop_data:
             continue
         source_name = f"Racer{slot + 1}_{region_name.capitalize()}"
@@ -957,7 +1225,87 @@ async def apply_preset(preset_id: int, slot: int = 0) -> dict[str, Any]:
         except Exception as exc:
             log.warning("Preset apply failed for %s: %s", source_name, exc)
 
+    # Place any images attached to the preset (e.g. a tracker placeholder)
+    placed = await _place_preset_images(slot, p.images or {})
+    applied.extend(placed)
+
     return {"status": "ok", "applied": applied}
+
+
+async def _place_preset_images(slot: int, images: dict[str, Any],
+                               scene: str = RACE_SCENE) -> list[str]:
+    """Create image sources for a preset's attached images.
+
+    Each image is keyed by a region ("tracker", custom key, …).  When the
+    active template defines a rect for that region+slot, the image is
+    stretched into it and the corresponding live feed item is hidden —
+    e.g. a placeholder shown instead of a tracker the racer doesn't run.
+    Stale ``PresetImg_R{N}_*`` sources from a previously applied preset
+    are removed.
+    """
+    # Resolve template rects for this slot and the template→canvas scale
+    tpl_rects: dict[str, Any] = {}
+    tpl_size = None
+    if _active_template_id is not None:
+        try:
+            tpl = presets.get_template(_active_template_id)
+            layout = await _template_layout_args(tpl)
+            tpl_rects = layout["slot_regions"].get(str(slot), {}) or {}
+            tpl_size = layout["template_size"]
+        except Exception:
+            pass
+    try:
+        vs = await obs.get_video_settings()
+        canvas_w = float(vs.get("baseWidth", 1920))
+        canvas_h = float(vs.get("baseHeight", 1080))
+    except Exception:
+        canvas_w, canvas_h = 1920.0, 1080.0
+    tpl_w, tpl_h = tpl_size if tpl_size else (canvas_w, canvas_h)
+    sx = canvas_w / tpl_w if tpl_w else 1.0
+    sy = canvas_h / tpl_h if tpl_h else 1.0
+
+    placed: list[str] = []
+    wanted: set[str] = set()
+    for region, info in images.items():
+        path = (info or {}).get("path", "")
+        if not path or not Path(path).exists():
+            continue
+        src_name = f"PresetImg_R{slot + 1}_{region}"
+        wanted.add(src_name)
+        try:
+            await obs.create_image_source(scene, src_name, _obs_image_path(path))
+            rect = tpl_rects.get(region)
+            if rect:
+                await obs.set_scene_item_transform(scene, src_name, {
+                    "positionX": float(rect["x"]) * sx,
+                    "positionY": float(rect["y"]) * sy,
+                    "boundsType": "OBS_BOUNDS_STRETCH",
+                    "boundsWidth": float(rect["width"]) * sx,
+                    "boundsHeight": float(rect["height"]) * sy,
+                })
+                # The image stands in for the live region → hide the feed item
+                try:
+                    await obs.set_scene_item_enabled(
+                        scene, f"Racer{slot + 1}_{region.capitalize()}", False)
+                except Exception:
+                    pass
+            else:
+                log.info("Preset image '%s': no template rect for region '%s' — "
+                         "placed unpositioned", src_name, region)
+            placed.append(src_name)
+        except Exception as exc:
+            log.warning("Preset image '%s' failed: %s", src_name, exc)
+
+    # Remove leftovers from a previously applied preset for this slot
+    try:
+        resp = await obs.request("GetInputList", {})
+        for inp in resp.get("inputs", []):
+            name = inp.get("inputName", "")
+            if name.startswith(f"PresetImg_R{slot + 1}_") and name not in wanted:
+                await obs.remove_input_if_exists(name)
+    except Exception:
+        pass
+    return placed
 
 
 # ---------------------------------------------------------------------------
@@ -984,23 +1332,125 @@ async def upload_template(name: str = "Untitled", file: UploadFile = File(...)) 
     dest = _TEMPLATES_UPLOAD_DIR / fname
     _TEMPLATES_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-    with open(dest, "wb") as f:
-        content = await file.read()
-        f.write(content)
+    content = await file.read()
+    await asyncio.to_thread(dest.write_bytes, content)
 
     tpl = presets.save_template(name=name, image_path=str(dest), regions={})
     return {"status": "ok", "template": tpl}
+
+
+@app.post("/api/templates/blank")
+async def create_blank_template(req: BlankTemplateRequest) -> dict[str, Any]:
+    """Create a template with no background image — just a canvas size.
+
+    For restreamers who want a simple layout without designing artwork:
+    regions and text are placed on the bare OBS canvas.
+    """
+    w = max(16, min(req.width, 16384))
+    h = max(16, min(req.height, 16384))
+    regions: dict[str, Any] = {
+        "slots": {"0": {}, "1": {}},
+        "num_slots": 2,
+        "texts": [],
+        "canvas": {"width": w, "height": h},
+    }
+    tpl = presets.save_template(name=req.name.strip() or "Untitled", image_path="", regions=regions)
+    return {"status": "ok", "template": tpl}
+
+
+@app.post("/api/templates/{template_id}/region-image")
+async def upload_template_region_image(
+    template_id: int, slot: int = 0, region: str = "tracker",
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    """Attach an image to a template region (per racer slot).
+
+    The image is shown in the layout editor and, on apply, placed in OBS
+    instead of that region's live feed — e.g. a placeholder for a racer
+    who doesn't run a tracker.
+    """
+    try:
+        tpl = presets.get_template(template_id)
+    except KeyError:
+        return {"status": "error", "error": "Template not found"}
+    key = _norm_region_key(region)
+    if not key:
+        return {"status": "error", "error": "Invalid region"}
+    if not file.filename:
+        return {"status": "error", "error": "No file uploaded"}
+    ext = Path(file.filename).suffix.lower()
+    if ext not in _IMAGE_EXTS:
+        return {"status": "error", "error": "Only JPG/PNG/WebP images allowed"}
+
+    import uuid
+    dest = _TEMPLATES_UPLOAD_DIR / f"region_{uuid.uuid4().hex}{ext}"
+    _TEMPLATES_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    content = await file.read()
+    await asyncio.to_thread(dest.write_bytes, content)
+
+    regions = tpl.get("regions") or {}
+    images = regions.setdefault("images", {})
+    slot_imgs = images.setdefault(str(slot), {})
+    old = (slot_imgs.get(key) or {}).get("path", "")
+    if old:
+        try:
+            Path(old).unlink(missing_ok=True)
+        except OSError:
+            pass
+    slot_imgs[key] = {"path": str(dest), "original_name": file.filename}
+    tpl = presets.update_template_regions(template_id, regions)
+    return {"status": "ok", "template": tpl}
+
+
+@app.delete("/api/templates/{template_id}/region-image")
+async def delete_template_region_image(
+    template_id: int, slot: int = 0, region: str = "tracker",
+) -> dict[str, Any]:
+    try:
+        tpl = presets.get_template(template_id)
+    except KeyError:
+        return {"status": "error", "error": "Template not found"}
+    key = _norm_region_key(region)
+    regions = tpl.get("regions") or {}
+    slot_imgs = (regions.get("images") or {}).get(str(slot), {})
+    info = slot_imgs.pop(key, None)
+    if info and info.get("path"):
+        try:
+            Path(info["path"]).unlink(missing_ok=True)
+        except OSError:
+            pass
+    tpl = presets.update_template_regions(template_id, regions)
+    return {"status": "ok", "template": tpl}
+
+
+@app.get("/api/templates/{template_id}/region-image")
+async def get_template_region_image(
+    template_id: int, slot: int = 0, region: str = "tracker",
+):
+    """Serve a template's region image file (for the layout editor preview)."""
+    from fastapi.responses import FileResponse, JSONResponse
+    try:
+        tpl = presets.get_template(template_id)
+    except KeyError:
+        return JSONResponse(status_code=404, content={"detail": "Template not found"})
+    key = _norm_region_key(region)
+    info = ((tpl.get("regions") or {}).get("images") or {}).get(str(slot), {}).get(key)
+    path = (info or {}).get("path", "")
+    if not path or not Path(path).is_file():
+        return JSONResponse(status_code=404, content={"detail": "No image for this region"})
+    return FileResponse(path)
 
 
 @app.get("/api/templates/{template_id}")
 async def get_template(template_id: int) -> dict[str, Any]:
     try:
         tpl = presets.get_template(template_id)
-        # Include base64 image data
-        img_path = Path(tpl["image_path"])
-        if img_path.exists():
-            raw = img_path.read_bytes()
-            tpl["image_b64"] = base64.b64encode(raw).decode()
+        # Include base64 image data (blank templates have no image)
+        if tpl["image_path"]:
+            img_path = Path(tpl["image_path"])
+            if img_path.is_file():
+                raw = await asyncio.to_thread(img_path.read_bytes)
+                tpl["image_b64"] = base64.b64encode(raw).decode()
         return {"status": "ok", "template": tpl}
     except KeyError:
         return {"status": "error", "error": "Template not found"}
@@ -1017,15 +1467,25 @@ async def update_template_regions(template_id: int, req: TemplateRegionsRequest)
 
 @app.delete("/api/templates/{template_id}")
 async def delete_template(template_id: int) -> dict[str, Any]:
+    global _active_template_id
     try:
         tpl = presets.get_template(template_id)
-        # Clean up image file
-        img_path = Path(tpl["image_path"])
-        if img_path.exists():
-            img_path.unlink()
-    except KeyError:
+        # Clean up image files (background + any region images)
+        if tpl["image_path"]:
+            img_path = Path(tpl["image_path"])
+            if img_path.is_file():
+                img_path.unlink()
+        for slot_imgs in ((tpl.get("regions") or {}).get("images") or {}).values():
+            for info in (slot_imgs or {}).values():
+                path = (info or {}).get("path", "")
+                if path:
+                    Path(path).unlink(missing_ok=True)
+    except (KeyError, OSError):
         pass
     ok = presets.delete_template(template_id)
+    if _active_template_id == template_id:
+        _active_template_id = None
+        presets.set_setting("active_template_id", "")
     return {"status": "ok" if ok else "not_found"}
 
 
@@ -1049,21 +1509,11 @@ async def apply_template_to_obs(
         return {"status": "error", "error": "Template not found"}
 
     regions = tpl.get("regions", {})
-    slot_regions = regions.get("slots", {})
-    if not slot_regions:
-        return {"status": "error", "error": "Template has no slot regions defined"}
+    layout = await _template_layout_args(tpl)
+    if not layout["slot_regions"] and not layout["text_entries"]:
+        return {"status": "error", "error": "Template has no regions defined yet — draw some first"}
 
-    # Use the stored image path for OBS background — translate for host-side OBS
-    img_path = tpl.get("image_path", "")
-    if img_path and Path(img_path).exists():
-        img_path = _obs_image_path(img_path)
-    else:
-        img_path = None
-
-    text_entries = regions.get("texts", [])
-    applied = await obs.apply_template_layout(
-        scene, img_path, slot_regions, text_entries,
-    )
+    applied = await obs.apply_template_layout(scene, **layout)
     _active_template_id = template_id
     presets.set_setting("active_template_id", str(template_id))
     await broadcast("template:applied", {

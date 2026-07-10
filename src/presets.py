@@ -23,6 +23,10 @@ class CropPreset:
     game_crop: dict[str, int] | None
     tracker_crop: dict[str, int] | None
     timer_crop: dict[str, int] | None
+    # Custom named regions: {region_key: {x, y, width, height, ...}}
+    extra_crops: dict[str, Any] | None
+    # Attached images: {region_key: {"path": str, "original_name": str}}
+    images: dict[str, Any] | None
     created_at: str  # ISO timestamp
 
     def to_dict(self) -> dict[str, Any]:
@@ -33,6 +37,8 @@ class CropPreset:
             "game_crop": self.game_crop,
             "tracker_crop": self.tracker_crop,
             "timer_crop": self.timer_crop,
+            "extra_crops": self.extra_crops,
+            "images": self.images,
             "created_at": self.created_at,
         }
 
@@ -75,16 +81,26 @@ class PresetStore:
                 value TEXT NOT NULL
             )
         """)
+        # Migrations for columns added after the first release
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(presets)")}
+        if "extra_crops" not in cols:
+            self._conn.execute("ALTER TABLE presets ADD COLUMN extra_crops TEXT")
+        if "images" not in cols:
+            self._conn.execute("ALTER TABLE presets ADD COLUMN images TEXT")
         self._conn.commit()
 
     def _row_to_preset(self, row: sqlite3.Row) -> CropPreset:
+        def _j(col: str) -> Any:
+            return json.loads(row[col]) if row[col] else None
         return CropPreset(
             id=row["id"],
             channel=row["channel"],
             name=row["name"],
-            game_crop=json.loads(row["game_crop"]) if row["game_crop"] else None,
-            tracker_crop=json.loads(row["tracker_crop"]) if row["tracker_crop"] else None,
-            timer_crop=json.loads(row["timer_crop"]) if row["timer_crop"] else None,
+            game_crop=_j("game_crop"),
+            tracker_crop=_j("tracker_crop"),
+            timer_crop=_j("timer_crop"),
+            extra_crops=_j("extra_crops"),
+            images=_j("images"),
             created_at=row["created_at"],
         )
 
@@ -97,20 +113,30 @@ class PresetStore:
         game_crop: dict[str, int] | None = None,
         tracker_crop: dict[str, int] | None = None,
         timer_crop: dict[str, int] | None = None,
+        extra_crops: dict[str, Any] | None = None,
     ) -> CropPreset:
         cur = self._conn.execute(
-            """INSERT INTO presets (channel, name, game_crop, tracker_crop, timer_crop)
-               VALUES (?, ?, ?, ?, ?)""",
+            """INSERT INTO presets (channel, name, game_crop, tracker_crop, timer_crop, extra_crops)
+               VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 channel.lower().strip(),
                 name.strip(),
                 json.dumps(game_crop) if game_crop else None,
                 json.dumps(tracker_crop) if tracker_crop else None,
                 json.dumps(timer_crop) if timer_crop else None,
+                json.dumps(extra_crops) if extra_crops else None,
             ),
         )
         self._conn.commit()
         return self.get_preset(cur.lastrowid)  # type: ignore[arg-type]
+
+    def update_preset_images(self, preset_id: int, images: dict[str, Any]) -> CropPreset:
+        self._conn.execute(
+            "UPDATE presets SET images = ? WHERE id = ?",
+            (json.dumps(images) if images else None, preset_id),
+        )
+        self._conn.commit()
+        return self.get_preset(preset_id)
 
     def get_preset(self, preset_id: int) -> CropPreset:
         row = self._conn.execute(
