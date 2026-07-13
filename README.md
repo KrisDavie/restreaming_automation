@@ -50,17 +50,13 @@ sudo pacman -S obs-studio python ffmpeg streamlink
 
 ### 3. Set up and start
 
-**Windows:** in the app folder, right-click `scripts\setup.ps1` → **Run with PowerShell** (or run it from a PowerShell window). If Windows blocks it with a message about scripts being disabled, run this instead:
+**Windows:**
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
-```
+1. In the app folder, **double-click `setup.bat`**. It checks all prerequisites (and tells you exactly what's missing), sets up the app, and creates a settings file called `.env`.
+2. Open `.env` in Notepad and set `OBS_WS_PASSWORD=` to your OBS WebSocket password.
+3. **Double-click `start.bat`** to launch the server. Keep that window open while you use the app; close it (or press Ctrl+C in it) to stop.
 
-The script checks all prerequisites (and tells you exactly what's missing), sets up the app, and creates a settings file called `.env`. Open `.env` in Notepad and set `OBS_WS_PASSWORD=` to your OBS WebSocket password. Then start the server:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\start.ps1
-```
+*(PowerShell users can run `scripts\setup.ps1` / `scripts\start.ps1` directly instead — the `.bat` files are just double-click wrappers that bypass the "running scripts is disabled" policy.)*
 
 **Linux:**
 

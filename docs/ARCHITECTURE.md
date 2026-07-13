@@ -38,6 +38,7 @@ restreaming_automation/
 ├── data/                         # SQLite DB + uploaded images (auto-created)
 ├── docs/                         # This documentation
 ├── scripts/                      # Setup/start scripts, systemd units
+├── setup.bat / start.bat         # Double-click wrappers for the Windows scripts
 ├── .env.example                  # Environment template
 ├── Dockerfile                    # Multi-stage Docker build
 ├── docker-compose.yml            # Docker deployment (prod + dev)

@@ -52,8 +52,8 @@ Write-Host "`n=== Setup complete! ===" -ForegroundColor Green
 Write-Host @"
 
 Next steps:
-  1. Edit .env with your OBS WebSocket password
-  2. Start the server:    .\scripts\start.ps1
+  1. Edit .env with your OBS WebSocket password (open it in Notepad)
+  2. Start the server:    double-click start.bat   (or .\scripts\start.ps1)
   3. Open dashboard:      http://localhost:8008/dashboard
 
 "@ -ForegroundColor White
