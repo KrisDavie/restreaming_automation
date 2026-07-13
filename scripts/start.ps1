@@ -4,6 +4,10 @@
 
 $ErrorActionPreference = "Stop"
 
+# Always run from the project root, no matter how the script was launched
+# (e.g. right-click -> Run with PowerShell starts in the scripts\ folder)
+Set-Location (Split-Path $PSScriptRoot -Parent)
+
 Write-Host "=== Starting Restreaming Automation ===" -ForegroundColor Cyan
 
 # Activate venv

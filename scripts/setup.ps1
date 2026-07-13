@@ -5,6 +5,10 @@
 
 $ErrorActionPreference = "Stop"
 
+# Always run from the project root, no matter how the script was launched
+# (e.g. right-click -> Run with PowerShell starts in the scripts\ folder)
+Set-Location (Split-Path $PSScriptRoot -Parent)
+
 Write-Host "=== Restreaming Automation - Setup ===" -ForegroundColor Cyan
 
 # ---- Check prerequisites ----
@@ -13,14 +17,14 @@ function Test-Command($cmd) {
 }
 
 $missing = @()
-if (-not (Test-Command "python"))     { $missing += "Python 3.10+ (https://python.org)" }
-if (-not (Test-Command "ffmpeg"))     { $missing += "FFmpeg (https://ffmpeg.org)" }
-if (-not (Test-Command "streamlink")) { $missing += "Streamlink (pip install streamlink)" }
+if (-not (Test-Command "python"))     { $missing += "Python 3.10+  ->  winget install Python.Python.3.12    (or python.org - tick 'Add python.exe to PATH')" }
+if (-not (Test-Command "ffmpeg"))     { $missing += "FFmpeg        ->  winget install Gyan.FFmpeg" }
+if (-not (Test-Command "streamlink")) { $missing += "Streamlink    ->  winget install Streamlink.Streamlink (or the installer at streamlink.github.io/install.html)" }
 
 if ($missing.Count -gt 0) {
     Write-Host "`nMissing prerequisites:" -ForegroundColor Yellow
     $missing | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
-    Write-Host "`nInstall the above and re-run this script." -ForegroundColor Yellow
+    Write-Host "`nInstall the above, close and reopen PowerShell, then re-run this script." -ForegroundColor Yellow
     exit 1
 }
 
