@@ -59,6 +59,7 @@ from .config import Config, load_config
 from .ingest import IngestManager
 from .obs_control import OBSController, OBSRequestError, SourceCrop
 from .presets import PresetStore
+from .slobs_control import SlobsController
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -155,6 +156,13 @@ class AudioMonitorRequest(BaseModel):
     input_name: str
     monitor_type: str = "OBS_MONITORING_TYPE_MONITOR_ONLY"
 
+
+class AppSelectRequest(BaseModel):
+    app: str  # "obs" | "streamlabs"
+    host: str | None = None    # Streamlabs only
+    port: int | None = None    # Streamlabs only
+    token: str | None = None   # Streamlabs only (empty string clears)
+
 class PresetSaveRequest(BaseModel):
     channel: str
     name: str
@@ -197,11 +205,36 @@ class TextSourceRequest(BaseModel):
 
 config: Config
 ingest: IngestManager
-obs: OBSController
+obs: OBSController | SlobsController  # the ACTIVE streaming-app controller
 presets: PresetStore
 
-RACE_SCENE = "Race Scene"  # Default OBS scene used for auto-setup
+RACE_SCENE = "Race Scene"  # Default scene used for auto-setup
 _active_template_id: int | None = None  # Currently applied template
+
+
+def _slobs_conn_settings() -> dict[str, Any]:
+    """Streamlabs connection settings: dashboard-saved values override .env."""
+    port_raw = presets.get_setting("slobs_port") or ""
+    try:
+        port = int(port_raw) if port_raw else None
+    except ValueError:
+        port = None
+    return {
+        "host": presets.get_setting("slobs_host") or None,
+        "port": port,
+        "token": presets.get_setting("slobs_token"),  # None if never set
+    }
+
+
+def _make_controller(app: str) -> OBSController | SlobsController:
+    if app == "streamlabs":
+        return SlobsController(config, **_slobs_conn_settings())
+    return OBSController(config)
+
+
+def _active_app() -> str:
+    app = presets.get_setting("streaming_app") or config.streaming_app
+    return app if app in ("obs", "streamlabs") else "obs"
 
 
 def _obs_image_path(path: str) -> str:
@@ -330,8 +363,8 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     global config, ingest, obs, presets, _active_template_id
     config = load_config()
     ingest = IngestManager(config, on_event=_ingest_event_handler)
-    obs = OBSController(config)
     presets = PresetStore()
+    obs = _make_controller(_active_app())
     _TEMPLATES_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     _PRESET_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -348,16 +381,16 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         except (ValueError, KeyError):
             _active_template_id = None
 
-    log.info("Restreaming Automation API ready  (OBS target: %s)", config.obs_ws_url)
+    log.info("Restreaming Automation API ready  (app: %s)", obs.app)
 
     # Try auto-connecting to OBS at startup
     try:
         await obs.connect()
-        log.info("Auto-connected to OBS at startup")
+        log.info("Auto-connected to %s at startup", obs.app)
         # Rebuild scene-item cache so existing Feed items map to logical names
-        await obs._rebuild_scene_cache(RACE_SCENE)
+        await obs.rebuild_scene_cache(RACE_SCENE)
     except Exception as exc:
-        log.info("OBS not available at startup (will connect later): %s", exc)
+        log.info("Streaming app not available at startup (will connect later): %s", exc)
 
     yield
     await ingest.stop_all()
@@ -630,7 +663,7 @@ async def detect_manual(req: ManualCropRequest) -> dict[str, str]:
 async def obs_connect() -> dict[str, Any]:
     if obs.connected:
         # Rebuild the scene-item cache so logical names resolve correctly
-        await obs._rebuild_scene_cache(RACE_SCENE)
+        await obs.rebuild_scene_cache(RACE_SCENE)
         # Still provision any feeds that haven't been set up yet
         await _provision_running_feeds()
         return {"status": "already_connected"}
@@ -641,7 +674,7 @@ async def obs_connect() -> dict[str, Any]:
         return {"status": "error", "error": str(exc)}
     await broadcast("obs:connected", {})
     # Rebuild cache for existing scene items
-    await obs._rebuild_scene_cache(RACE_SCENE)
+    await obs.rebuild_scene_cache(RACE_SCENE)
     # Retroactively provision all running feeds
     await _provision_running_feeds()
     return {"status": "ok"}
@@ -656,15 +689,76 @@ async def obs_disconnect() -> dict[str, str]:
 
 @app.get("/api/obs/status")
 async def obs_status() -> dict[str, Any]:
-    resp: dict[str, Any] = {"connected": obs.connected}
+    resp: dict[str, Any] = {
+        "connected": obs.connected,
+        "app": obs.app,
+        "capabilities": obs.capabilities,
+    }
     if obs.connected:
         resp["platform"] = obs.platform
         try:
-            # Lets the dashboard mirror OBS's font-size semantics exactly
+            # Lets the dashboard mirror the app's font-size semantics exactly
             resp["text_kind"] = await obs.text_source_kind()
         except Exception:
             pass
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Streaming-app selection (OBS Studio ↔ Streamlabs Desktop)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/app")
+async def get_streaming_app() -> dict[str, Any]:
+    conn = _slobs_conn_settings()
+    return {
+        "app": obs.app,
+        "connected": obs.connected,
+        "capabilities": obs.capabilities,
+        "slobs_host": conn["host"] or config.slobs_host,
+        "slobs_port": conn["port"] or config.slobs_port,
+        "slobs_has_token": bool(conn["token"] or config.slobs_token),
+    }
+
+
+@app.post("/api/app")
+async def select_streaming_app(req: AppSelectRequest) -> dict[str, Any]:
+    """Switch between OBS Studio and Streamlabs Desktop (and save connection
+    settings for the latter). Reconnects with the new settings."""
+    global obs
+    if req.app not in ("obs", "streamlabs"):
+        return {"status": "error", "error": f"Unknown app '{req.app}'"}
+
+    if req.host is not None:
+        presets.set_setting("slobs_host", req.host.strip())
+    if req.port is not None:
+        presets.set_setting("slobs_port", str(req.port))
+    if req.token is not None:
+        presets.set_setting("slobs_token", req.token.strip())
+    presets.set_setting("streaming_app", req.app)
+
+    # Swap the active controller
+    if obs.connected:
+        try:
+            await obs.disconnect()
+        except Exception:
+            pass
+        await broadcast("obs:disconnected", {})
+    obs = _make_controller(req.app)
+    obs.set_extra_regions([k.capitalize() for k in _get_custom_regions()])
+
+    result: dict[str, Any] = {"status": "ok", "app": req.app, "connected": False}
+    try:
+        await obs.connect()
+        await obs.rebuild_scene_cache(RACE_SCENE)
+        await _provision_running_feeds()
+        await broadcast("obs:connected", {})
+        result["connected"] = True
+    except Exception as exc:
+        log.info("Switched to %s but connect failed: %s", req.app, exc)
+        result["error"] = str(exc)
+    result["capabilities"] = obs.capabilities
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -722,17 +816,27 @@ async def obs_init() -> dict[str, Any]:
 
 @app.post("/api/obs/launch")
 async def obs_launch() -> dict[str, str]:
-    """Attempt to launch OBS Studio as a detached process."""
+    """Attempt to launch the active streaming app as a detached process."""
+    import os
+    slobs = obs.app == "streamlabs"
+    app_label = "Streamlabs Desktop" if slobs else "OBS"
     try:
         if sys.platform == "win32":
-            # Common install locations on Windows
-            candidates = [
-                Path(r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"),
-                Path(r"C:\Program Files (x86)\obs-studio\bin\64bit\obs64.exe"),
-            ]
-            obs_path = shutil.which("obs64") or shutil.which("obs")
-            if obs_path:
-                candidates.insert(0, Path(obs_path))
+            if slobs:
+                pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+                candidates = [
+                    Path(pf) / "Streamlabs Desktop" / "Streamlabs Desktop.exe",
+                    Path(pf) / "Streamlabs OBS" / "Streamlabs OBS.exe",
+                ]
+            else:
+                # Common install locations on Windows
+                candidates = [
+                    Path(r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"),
+                    Path(r"C:\Program Files (x86)\obs-studio\bin\64bit\obs64.exe"),
+                ]
+                obs_path = shutil.which("obs64") or shutil.which("obs")
+                if obs_path:
+                    candidates.insert(0, Path(obs_path))
             for p in candidates:
                 if p.exists():
                     subprocess.Popen(
@@ -742,11 +846,15 @@ async def obs_launch() -> dict[str, str]:
                         | subprocess.CREATE_NEW_PROCESS_GROUP,
                     )
                     return {"status": "ok"}
-            return {"status": "error", "error": "OBS not found"}
+            return {"status": "error", "error": f"{app_label} not found"}
         elif sys.platform == "darwin":
-            subprocess.Popen(["open", "-a", "OBS"])
+            subprocess.Popen(["open", "-a", "Streamlabs Desktop" if slobs else "OBS"])
             return {"status": "ok"}
         else:
+            if slobs:
+                return {"status": "error",
+                        "error": "Streamlabs Desktop has no Linux build — run it on a "
+                                 "Windows/macOS machine and connect over the network"}
             obs_bin = shutil.which("obs")
             if not obs_bin:
                 return {"status": "error", "error": "OBS not found on PATH"}
@@ -758,7 +866,7 @@ async def obs_launch() -> dict[str, str]:
             )
             return {"status": "ok"}
     except Exception as exc:
-        log.warning("Failed to launch OBS: %s", exc)
+        log.warning("Failed to launch %s: %s", app_label, exc)
         return {"status": "error", "error": str(exc)}
 
 
@@ -969,36 +1077,12 @@ async def obs_audio_devices() -> dict[str, Any]:
     Falls back to a single "Default" entry on failure.
     """
     if not obs.connected:
-        return {"status": "error", "error": "OBS not connected", "devices": []}
-    probe_name = "_device_probe_tmp"
-    kind = obs.audio_capture_kind()
+        return {"status": "error", "error": "Streaming app not connected", "devices": []}
     try:
-        # Create a hidden temporary source so we can list its device options.
-        # Use the current program scene — it always exists, unlike Race Scene.
-        probe_scene = await _current_scene()
-        try:
-            await obs.request("CreateInput", {
-                "sceneName": probe_scene,
-                "inputName": probe_name,
-                "inputKind": kind,
-                "inputSettings": {},
-                "sceneItemEnabled": False,
-            })
-        except Exception:
-            pass  # may already exist from a previous failed cleanup
-        resp = await obs.request("GetInputPropertiesListPropertyItems", {
-            "inputName": probe_name,
-            "propertyName": "device_id",
-        })
-        items = resp.get("propertyItems", [])
-        return {"status": "ok", "devices": items}
+        devices = await obs.list_audio_devices(await _current_scene())
+        return {"status": "ok", "devices": devices}
     except Exception:
         return {"status": "ok", "devices": [{"itemName": "Default", "itemValue": "default"}]}
-    finally:
-        try:
-            await obs.request("RemoveInput", {"inputName": probe_name})
-        except Exception:
-            pass
 
 
 @app.get("/api/obs/audio/apps")
@@ -1009,34 +1093,12 @@ async def obs_audio_apps() -> dict[str, Any]:
     offers these as a dropdown.
     """
     if not obs.connected:
-        return {"status": "error", "error": "OBS not connected", "apps": []}
-    if obs.platform != "windows":
-        return {"status": "ok", "apps": []}
-    probe_name = "_app_probe_tmp"
-    probe_scene = await _current_scene()
+        return {"status": "error", "error": "Streaming app not connected", "apps": []}
     try:
-        try:
-            await obs.request("CreateInput", {
-                "sceneName": probe_scene,
-                "inputName": probe_name,
-                "inputKind": "wasapi_process_output_capture",
-                "inputSettings": {},
-                "sceneItemEnabled": False,
-            })
-        except Exception:
-            pass  # may already exist from a previous failed cleanup
-        resp = await obs.request("GetInputPropertiesListPropertyItems", {
-            "inputName": probe_name,
-            "propertyName": "window",
-        })
-        return {"status": "ok", "apps": resp.get("propertyItems", [])}
+        apps = await obs.list_audio_apps(await _current_scene())
+        return {"status": "ok", "apps": apps}
     except Exception as exc:
         return {"status": "error", "error": str(exc), "apps": []}
-    finally:
-        try:
-            await obs.request("RemoveInput", {"inputName": probe_name})
-        except Exception:
-            pass
 
 
 @app.post("/api/obs/text")
@@ -1298,9 +1360,7 @@ async def _place_preset_images(slot: int, images: dict[str, Any],
 
     # Remove leftovers from a previously applied preset for this slot
     try:
-        resp = await obs.request("GetInputList", {})
-        for inp in resp.get("inputs", []):
-            name = inp.get("inputName", "")
+        for name in await obs.list_input_names():
             if name.startswith(f"PresetImg_R{slot + 1}_") and name not in wanted:
                 await obs.remove_input_if_exists(name)
     except Exception:

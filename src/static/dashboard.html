@@ -176,12 +176,33 @@
         <!-- RIGHT: OBS + Scene Preview -->
         <div style="display:flex;flex-direction:column;gap:16px;">
             <section class="card" id="sec-obs">
-                <div class="card-header red"><span class="step">2</span> OBS Control</div>
+                <div class="card-header red"><span class="step">2</span> <span id="appPanelTitle">OBS Control</span></div>
                 <div class="card-body">
                     <div class="slot-box">
-                        <h4><span class="dot off" id="obsCardDot"></span> OBS WebSocket</h4>
+                        <h4>Streaming App</h4>
+                        <div class="row" style="align-items:end">
+                            <div style="flex:1">
+                                <select id="appSel" onchange="appSelChanged()" style="margin-bottom:0">
+                                    <option value="obs">OBS Studio</option>
+                                    <option value="streamlabs">Streamlabs Desktop</option>
+                                </select>
+                            </div>
+                            <div style="flex:0"><button class="bp btn-sm" onclick="applyApp()" title="Switch to the selected app and reconnect">Use</button></div>
+                        </div>
+                        <div id="slobsConnRow" style="display:none;margin-top:8px">
+                            <div class="row">
+                                <div style="flex:2"><label>Host</label><input id="slobsHost" placeholder="127.0.0.1"></div>
+                                <div style="flex:1"><label>Port</label><input id="slobsPort" type="number" placeholder="59650"></div>
+                            </div>
+                            <label>API Token <span id="slobsTokenStatus" style="font-size:10px;text-transform:none;color:var(--text2)"></span></label>
+                            <input id="slobsToken" type="password" placeholder="Paste token, then click Use (leave empty to keep saved)">
+                            <div class="hint">In Streamlabs Desktop: <b>Settings → Mobile</b> → <b>Third Party Connections</b> → enable <b>Allow third party connections</b> → copy the <b>API Token</b>. If connecting fails, set Host to one of the addresses from its <i>IP Addresses</i> box (Streamlabs may not listen on 127.0.0.1) and restart Streamlabs after enabling.</div>
+                        </div>
+                    </div>
+                    <div class="slot-box">
+                        <h4><span class="dot off" id="obsCardDot"></span> <span id="appConnLabel">OBS WebSocket</span></h4>
                         <div class="btn-group">
-                            <button class="bp btn-sm" onclick="launchObs()">🚀 Launch OBS</button>
+                            <button class="bp btn-sm" onclick="launchObs()" id="btnLaunchApp">🚀 Launch App</button>
                             <button class="bg btn-sm" onclick="obsConn()">Connect</button>
                             <button class="br btn-sm" onclick="obsDisc()">Disconnect</button>
                             <button class="bb btn-sm" onclick="obsInit()" title="Rebuild the Race Scene sources for all running feeds">🔄 Re-provision</button>
@@ -202,8 +223,8 @@
                 </div>
             </section>
 
-            <!-- Scene Preview -->
-            <section class="card">
+            <!-- Scene Preview (hidden on Streamlabs — it has no screenshot API) -->
+            <section class="card" id="scenePreviewCard">
                 <div class="card-header blue">Scene Preview</div>
                 <div class="card-body">
                     <img class="scene-preview-img" id="scenePreviewImg" style="display:none">
@@ -512,11 +533,89 @@ function showLoading(id, msg) {
     el.style.display = 'flex';
 }
 function hideLoading(id) { const el = document.getElementById(id); if (el) el.style.display = 'none'; }
+/* ---- Streaming app (OBS Studio / Streamlabs Desktop) ---- */
+let _appName = 'obs';
+let _appCaps = {};
+
+function appLabel() { return _appName === 'streamlabs' ? 'Streamlabs' : 'OBS'; }
+
 function setObsDot(on) {
     $('#obsDot').className = `dot ${on?'on':'off'}`;
     const cardDot = $('#obsCardDot'); if (cardDot) cardDot.className = `dot ${on?'on':'off'}`;
-    $('#obsText').textContent = on ? 'OBS Connected' : 'OBS';
+    $('#obsText').textContent = on ? `${appLabel()} Connected` : appLabel();
     if (!on) updateStreamStatusUI({ active: false });
+}
+
+function applyCapabilities(info) {
+    if (info.app) _appName = info.app;
+    if (info.capabilities) _appCaps = info.capabilities;
+    const caps = _appCaps;
+    const slobs = _appName === 'streamlabs';
+
+    // Labels
+    $('#appPanelTitle').textContent = slobs ? 'Streamlabs Control' : 'OBS Control';
+    $('#appConnLabel').textContent = slobs ? 'Streamlabs Remote API' : 'OBS WebSocket';
+    $('#btnLaunchApp').textContent = slobs ? '🚀 Launch Streamlabs' : '🚀 Launch OBS';
+    $('#obsText').textContent = $('#obsDot').className.includes('on')
+        ? `${appLabel()} Connected` : appLabel();
+
+    // Scene Preview needs a screenshot API (OBS only)
+    const preview = document.getElementById('scenePreviewCard');
+    if (preview) preview.style.display = caps.screenshot === false ? 'none' : '';
+    if (caps.screenshot === false && scenePreviewInterval) {
+        clearInterval(scenePreviewInterval); scenePreviewInterval = null;
+        const cb = document.getElementById('autoScenePreview');
+        if (cb) cb.checked = false;
+    }
+    // Streamlabs projectors have no size control
+    const projRes = document.getElementById('projectorRes');
+    if (projRes) projRes.style.display = caps.projector_geometry === false ? 'none' : '';
+}
+
+function appSelChanged() {
+    const slobs = $('#appSel').value === 'streamlabs';
+    $('#slobsConnRow').style.display = slobs ? 'block' : 'none';
+}
+
+async function loadAppInfo() {
+    try {
+        const r = await apiGet('/api/app');
+        $('#appSel').value = r.app;
+        $('#slobsHost').value = r.slobs_host || '127.0.0.1';
+        $('#slobsPort').value = r.slobs_port || 59650;
+        $('#slobsTokenStatus').textContent = r.slobs_has_token ? '(saved ✓)' : '(not set)';
+        appSelChanged();
+        applyCapabilities(r);
+        setObsDot(r.connected);
+    } catch {}
+}
+
+async function applyApp() {
+    const sel = $('#appSel').value;
+    const body = { app: sel };
+    if (sel === 'streamlabs') {
+        body.host = $('#slobsHost').value.trim() || '127.0.0.1';
+        body.port = parseInt($('#slobsPort').value) || 59650;
+        const tok = $('#slobsToken').value.trim();
+        if (tok) body.token = tok;
+    }
+    logMsg($('#oLog'), `Switching to ${sel === 'streamlabs' ? 'Streamlabs Desktop' : 'OBS Studio'}…`);
+    try {
+        const r = await apiPost('/api/app', body);
+        $('#slobsToken').value = '';
+        if (r.status === 'error') { logMsg($('#oLog'), `Switch failed: ${r.error}`); toast(r.error); return; }
+        applyCapabilities(r);
+        setObsDot(r.connected);
+        if (r.connected) {
+            logMsg($('#oLog'), `Connected to ${appLabel()}`);
+            loadSc(); populateProjectorRes(); refreshMixer(); updateStreamStatus();
+            syncAudioSoloState(); refreshSyncDelay();
+            const st = await apiGet('/api/obs/status'); applyObsStatus(st);
+        } else {
+            logMsg($('#oLog'), `Switched to ${appLabel()}, but not connected: ${r.error || 'start the app and click Connect'}`);
+        }
+        $('#slobsTokenStatus').textContent = (await apiGet('/api/app')).slobs_has_token ? '(saved ✓)' : '(not set)';
+    } catch(e) { logMsg($('#oLog'), `Switch error: ${e.message}`); }
 }
 
 /* ================================================================
@@ -1503,8 +1602,9 @@ let _obsTextKind = '';
 
 function applyObsStatus(st) {
     _obsTextKind = st.text_kind || '';
+    applyCapabilities(st);
     updateAudioCaptureUI(st.platform);
-    drawTplCanvas();   // text preview depends on the OBS text kind
+    drawTplCanvas();   // text preview depends on the app's text kind
 }
 
 function updateAudioCaptureUI(platform) {
@@ -1670,14 +1770,14 @@ async function resetSync() {
 async function launchObs() {
     try {
         const r = await apiPost('/api/obs/launch');
-        if (r.status === 'ok') logMsg($('#oLog'), 'OBS launched — wait a few seconds, then click Connect');
+        if (r.status === 'ok') logMsg($('#oLog'), `${appLabel()} launched — wait a few seconds, then click Connect`);
         else logMsg($('#oLog'), `Launch failed: ${r.error}`);
     } catch(e) { logMsg($('#oLog'), `Launch error: ${e.message}`); }
 }
 async function obsConn() {
     try {
         const r = await apiPost('/api/obs/connect');
-        if (r.status === 'error') { logMsg($('#oLog'), `Connect failed: ${r.error}`); toast(`OBS connect failed: ${r.error}`); return; }
+        if (r.status === 'error') { logMsg($('#oLog'), `Connect failed: ${r.error}`); toast(`${appLabel()} connect failed: ${r.error}`); return; }
         setObsDot(true); logMsg($('#oLog'), 'Connected'); loadSc(); populateProjectorRes(); refreshMixer(); updateStreamStatus(); syncAudioSoloState(); refreshSyncDelay();
         const st = await apiGet('/api/obs/status'); applyObsStatus(st);
     }
@@ -2627,8 +2727,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (at.template_id && at.num_slots) setNumSlots(at.num_slots);
     } catch {}
 
+    await loadAppInfo();
     try {
         const r = await apiGet('/api/obs/status');
+        applyCapabilities(r);
         if (r.connected) { setObsDot(true); loadSc(); populateProjectorRes(); applyObsStatus(r); updateStreamStatus(); syncAudioSoloState(); refreshSyncDelay(); }
     } catch {}
     setCropMode('game');

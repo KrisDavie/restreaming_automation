@@ -92,3 +92,7 @@ All settings come from the environment or a `.env` file in the repo root
 | `INGEST_PROTOCOL` | `udp` | `udp` or `srt` |
 | `TWITCH_OAUTH_TOKEN` | *(empty)* | Twitch OAuth token for ad-free ingest (can also be set in the dashboard) |
 | `OBS_DATA_DIR` | *(empty)* | Host path of `data/` when the server runs in Docker but OBS runs on the host |
+| `STREAMING_APP` | `obs` | `obs` (OBS Studio) or `streamlabs` (Streamlabs Desktop); the dashboard's choice overrides this |
+| `SLOBS_HOST` | `127.0.0.1` | Streamlabs Desktop remote API host |
+| `SLOBS_PORT` | `59650` | Streamlabs Desktop remote API port |
+| `SLOBS_TOKEN` | *(empty)* | Streamlabs API token (Settings → Mobile → Third Party Connections); can also be set in the dashboard |

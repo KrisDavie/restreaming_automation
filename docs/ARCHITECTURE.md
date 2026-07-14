@@ -17,9 +17,9 @@
 |---|---|---|
 | **Ingest** | Streamlink + FFmpeg | Pipe live streams to local UDP/SRT ports |
 | **Control** | FastAPI + HTML dashboard | Web UI for cropping, sync, scene control, templates |
-| **OBS Link** | OBS WebSocket v5 (async) | Remote scene/source manipulation via raw websockets |
-| **Compositing** | OBS Studio | Assemble and encode the final broadcast |
-| **Discord** | User's own account + OBS projector | Share the OBS scene to Discord voice channels |
+| **App Link** | OBS WebSocket v5 *or* Streamlabs JSON-RPC | Remote scene/source manipulation via raw websockets |
+| **Compositing** | OBS Studio or Streamlabs Desktop | Assemble and encode the final broadcast |
+| **Discord** | User's own account + projector window | Share the scene to Discord voice channels |
 
 ## Project structure
 
@@ -31,6 +31,7 @@ restreaming_automation/
 │   ├── config.py                 # Environment configuration (.env)
 │   ├── ingest.py                 # Streamlink/FFmpeg pipeline manager
 │   ├── obs_control.py            # OBS WebSocket v5 client (async, raw websockets)
+│   ├── slobs_control.py          # Streamlabs Desktop JSON-RPC client (same interface)
 │   ├── presets.py                # SQLite-backed preset/template storage
 │   ├── server.py                 # FastAPI REST + WebSocket API
 │   └── static/
@@ -93,6 +94,28 @@ the text block, matching OBS GDI+ semantics.
 `data/presets.db` (SQLite) holds crop presets, templates (regions as JSON), and settings
 (active template, custom region names). Uploaded images live under `data/template_images/`
 and `data/preset_images/`. Schema migrations run automatically at startup.
+
+### Two streaming-app backends
+
+The server holds one active controller behind a common method surface:
+`OBSController` (obs-websocket v5) or `SlobsController` (Streamlabs Desktop's
+JSON-RPC API on port 59650, SockJS raw-websocket endpoint, token auth).
+`POST /api/app` swaps them at runtime; every endpoint is backend-agnostic and
+each controller reports `capabilities` so the dashboard can hide what the
+active app can't do (Streamlabs: no screenshots, no projector geometry).
+
+Streamlabs specifics worth knowing:
+
+- Scenes/sources are id-based there; the controller keeps name→id caches.
+- Scene items have no "bounds": stretch-to-rect is emulated as
+  `scale = target / (source_size − crop)`, with target rects remembered per
+  item so later crop changes keep the on-screen size.
+- Sync (async_delay_filter + audio `syncOffset`), audio monitoring and the
+  projector ride Streamlabs' *internal* API — reachable because its remote
+  API falls back to internal services. Undocumented, hence every such call
+  degrades into a clear error if a future Streamlabs build blocks it.
+- "Expensive" calls (`getPropertiesFormData`) are rate-limited by Streamlabs;
+  the controller serializes them with a minimum interval.
 
 ### The dashboard
 

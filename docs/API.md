@@ -29,11 +29,24 @@ The dashboard is a thin client over this REST + WebSocket API — anything the U
 | GET/POST | `/api/custom-regions` | List / add custom crop regions (shared by all racers), `{ name }` |
 | DELETE | `/api/custom-regions/{name}` | Remove a custom region |
 
-## OBS Control
+## Streaming app selection
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/obs/connect` | Connect to OBS WebSocket |
+| GET | `/api/app` | Active app (`obs`/`streamlabs`), connection state, capabilities, saved Streamlabs host/port/token presence |
+| POST | `/api/app` | Switch app and save Streamlabs connection settings `{ app, host?, port?, token? }`; reconnects |
+
+`capabilities` (also on `/api/obs/status`) tells clients what the active app supports:
+`{ screenshot, projector_geometry, app_audio_capture }` — e.g. Streamlabs Desktop has no
+screenshot API, so the dashboard hides the Scene Preview panel when `screenshot` is false.
+
+## OBS Control
+
+The `/api/obs/*` endpoints drive **whichever app is active** (the path prefix is historical).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/obs/connect` | Connect to the active streaming app |
 | POST | `/api/obs/disconnect` | Disconnect |
 | POST | `/api/obs/launch` | Launch OBS Studio as a detached process |
 | GET | `/api/obs/status` | Connection status, platform, resolved text-source kind |

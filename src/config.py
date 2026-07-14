@@ -38,6 +38,14 @@ class Config:
         default_factory=lambda: _env("OBS_DATA_DIR", "")
     )
 
+    # Streaming application: "obs" (OBS Studio) or "streamlabs" (Streamlabs Desktop)
+    streaming_app: str = field(default_factory=lambda: _env("STREAMING_APP", "obs"))
+
+    # Streamlabs Desktop remote API (Settings → Remote Control in the app)
+    slobs_host: str = field(default_factory=lambda: _env("SLOBS_HOST", "127.0.0.1"))
+    slobs_port: int = field(default_factory=lambda: int(_env("SLOBS_PORT", "59650")))
+    slobs_token: str = field(default_factory=lambda: _env("SLOBS_TOKEN", ""))
+
     @property
     def obs_ws_url(self) -> str:
         return f"ws://{self.obs_ws_host}:{self.obs_ws_port}"

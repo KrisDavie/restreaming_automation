@@ -177,6 +177,68 @@ class OBSController:
         """Return the detected OBS host platform ('windows', 'macos', 'linux')."""
         return self._obs_platform
 
+    @property
+    def app(self) -> str:
+        """Which streaming application this controller drives."""
+        return "obs"
+
+    @property
+    def capabilities(self) -> dict[str, bool]:
+        """Feature flags the dashboard uses to show/hide panels."""
+        return {
+            "screenshot": True,
+            "projector_geometry": True,
+            "app_audio_capture": self._obs_platform == "windows",
+        }
+
+    async def rebuild_scene_cache(self, scene_name: str) -> None:
+        """Public alias for scene-item cache rebuilds (see _rebuild_scene_cache)."""
+        await self._rebuild_scene_cache(scene_name)
+
+    async def list_input_names(self) -> list[str]:
+        """Names of every input the app knows about."""
+        resp = await self.request("GetInputList", {})
+        return [i.get("inputName", "") for i in resp.get("inputs", [])]
+
+    async def _probe_property_items(
+        self, scene_name: str, kind: str, prop: str,
+    ) -> list[dict[str, Any]]:
+        """List a source property's options via a hidden temporary input."""
+        probe_name = f"_probe_{prop}_tmp"
+        try:
+            try:
+                await self.request("CreateInput", {
+                    "sceneName": scene_name,
+                    "inputName": probe_name,
+                    "inputKind": kind,
+                    "inputSettings": {},
+                    "sceneItemEnabled": False,
+                })
+            except OBSRequestError:
+                pass  # may already exist from a previous failed cleanup
+            resp = await self.request("GetInputPropertiesListPropertyItems", {
+                "inputName": probe_name,
+                "propertyName": prop,
+            })
+            return resp.get("propertyItems", [])
+        finally:
+            try:
+                await self.request("RemoveInput", {"inputName": probe_name})
+            except OBSRequestError:
+                pass
+
+    async def list_audio_devices(self, scene_name: str) -> list[dict[str, Any]]:
+        """Audio output-capture devices as [{itemName, itemValue}]."""
+        return await self._probe_property_items(
+            scene_name, self.audio_capture_kind(), "device_id")
+
+    async def list_audio_apps(self, scene_name: str) -> list[dict[str, Any]]:
+        """Capturable application windows (Windows only) as [{itemName, itemValue}]."""
+        if self._obs_platform != "windows":
+            return []
+        return await self._probe_property_items(
+            scene_name, "wasapi_process_output_capture", "window")
+
     # ------------------------------------------------------------------
     # Scene-item helpers (single-input, multi-item architecture)
     # ------------------------------------------------------------------
@@ -738,7 +800,7 @@ class OBSController:
                 pass
 
         # 2. Create or update the single media input
-        result = await self.create_media_source(scene_name, feed_name, input_url)
+        await self.create_media_source(scene_name, feed_name, input_url)
 
         # 3. Count existing scene items for this feed
         existing = await self._get_feed_scene_items(scene_name, feed_name)
@@ -889,8 +951,9 @@ class OBSController:
             r, g, b = 255, 255, 255
         return 0xFF000000 | (b << 16) | (g << 8) | r
 
+    @staticmethod
     def _text_settings(
-        self, kind: str, text: str, font_size: int, color_hex: str,
+        kind: str, text: str, font_size: int, color_hex: str,
         font_face: str = "Arial", align: str = "left",
     ) -> dict[str, Any]:
         """Build input settings for a text source of the given kind.
@@ -901,7 +964,7 @@ class OBSController:
         and the OBS render in step.  Multi-line text (\\n) is supported by
         both kinds; alignment is a GDI+-only setting (FreeType2 has none).
         """
-        color_int = self._color_to_obs(color_hex)
+        color_int = OBSController._color_to_obs(color_hex)
         settings: dict[str, Any] = {
             "text": text,
             "font": {"face": font_face or "Arial", "size": font_size, "flags": 0},

@@ -1,6 +1,8 @@
 # ALttP Restreaming Automation
 
-A browser dashboard that makes restreaming races (A Link to the Past Randomizer, or any other game) as simple as possible. It pulls the racers' Twitch streams onto your machine, builds the OBS scene for you — layout, crops, timers, text, audio — and gives you one page to run the whole broadcast from. No more manual cropping, no more fiddling in OBS mid-race.
+A browser dashboard that makes restreaming races (A Link to the Past Randomizer, or any other game) as simple as possible. It pulls the racers' Twitch streams onto your machine, builds the scene for you — layout, crops, timers, text, audio — and gives you one page to run the whole broadcast from. No more manual cropping, no more fiddling in your streaming app mid-race.
+
+Works with **OBS Studio** and **Streamlabs Desktop** (see [Using Streamlabs Desktop](#using-streamlabs-desktop)).
 
 - **Dashboard**: http://localhost:8008/dashboard (after starting the server)
 - Docs: [API reference](docs/API.md) · [Architecture](docs/ARCHITECTURE.md) · [Deployment (Docker, systemd, VMs)](docs/DEPLOYMENT.md)
@@ -104,13 +106,14 @@ Pulls each racer's stream onto your machine so OBS can use it.
 - **Twitch OAuth Token** *(optional but recommended)* — paste your Twitch OAuth token and click **💾 Set** so ingest sessions are authenticated: with Turbo/subs this removes ads. Takes effect on the next start/reconnect.
 - **Auto-reconnect** — if a feed drops mid-race the app reconnects it automatically with increasing delays, and tells you in the log. After 10 straight failures it gives up and shows an alert.
 
-### 2 · OBS Control
+### 2 · OBS / Streamlabs Control
 
-- **🚀 Launch OBS / Connect / Disconnect** — manage the OBS WebSocket link. Connecting also (re)builds the internal map of the Race Scene.
-- **🔄 Re-provision** — rebuilds all Race Scene sources for the currently running feeds. Use it if the scene got messed up in OBS.
-- **Scene** — switch the live OBS scene (e.g. to an intermission scene). The dropdown follows the actual current scene.
+- **Streaming App** — choose **OBS Studio** or **Streamlabs Desktop** and click **Use**. The dashboard reconnects and adapts to the selected app (see [Using Streamlabs Desktop](#using-streamlabs-desktop) for the token setup). Your choice is remembered.
+- **🚀 Launch / Connect / Disconnect** — manage the connection to the selected app. Connecting also (re)builds the internal map of the Race Scene.
+- **🔄 Re-provision** — rebuilds all Race Scene sources for the currently running feeds. Use it if the scene got messed up.
+- **Scene** — switch the live scene (e.g. to an intermission scene). The dropdown follows the actual current scene.
 - **▶ Start Stream / ■ Stop Stream** — the buttons swap depending on whether you're live; stopping asks for confirmation.
-- **Scene Preview** — a screenshot of the current OBS output; enable *Auto-refresh* to keep it updating every 5 s.
+- **Scene Preview** — a screenshot of the current output; enable *Auto-refresh* to keep it updating every 5 s. *(OBS Studio only — Streamlabs has no screenshot API, so this panel hides itself.)*
 
 ### 3 · Layout Template
 
@@ -156,9 +159,26 @@ Racers' streams arrive with different delays; this aligns them.
 
 ---
 
+## Using Streamlabs Desktop
+
+The app can drive Streamlabs Desktop (formerly Streamlabs OBS) instead of OBS Studio:
+
+1. In Streamlabs Desktop, open **Settings → Mobile** and find **Third Party Connections**.
+2. Enable **Allow third party connections**, then copy the **API Token** shown there (the *IP Addresses* box lists the addresses Streamlabs accepts connections on; the *Port* is normally 59650).
+3. In the dashboard's *Control* panel, set **Streaming App** to *Streamlabs Desktop*, paste the token, and click **Use**. The dashboard tries `127.0.0.1` and this machine's LAN address automatically; if Streamlabs runs on a different machine, set its IP (one from the *IP Addresses* box) as Host.
+4. If the connection is refused, restart Streamlabs Desktop after enabling the toggle and try again.
+
+Everything works the same as with OBS — layouts, crops, custom regions, text (GDI+ on Windows, same WYSIWYG preview), region images, audio mixing, sync, going live — with these differences:
+
+- **Scene Preview is unavailable** (Streamlabs has no screenshot API); the panel hides itself.
+- **Projector size can't be preset** — *Open Projector* still works, just resize the window it opens by hand before sharing it to Discord.
+- Sync, audio monitoring and the projector use Streamlabs' *internal* API, which Streamlabs doesn't officially document. It works today (the same mechanism Stream Deck-style tools rely on), but a future Streamlabs update could restrict it — if that happens the dashboard shows a clear "your Streamlabs version may block it" error rather than breaking.
+- Streamlabs Desktop runs on **Windows and macOS only**. If your dashboard server runs on another machine, use one of the addresses from Streamlabs' *IP Addresses* box as Host.
+
 ## Tips & troubleshooting
 
-- **OBS won't connect** — is OBS running, WebSocket server enabled (Tools → WebSocket Server Settings), and does `OBS_WS_PASSWORD` in `.env` match? The error message in the OBS panel says what failed.
+- **OBS won't connect** — is OBS running, WebSocket server enabled (Tools → WebSocket Server Settings), and does `OBS_WS_PASSWORD` in `.env` match? The error message in the panel says what failed.
+- **Streamlabs won't connect** — is *Allow third party connections* enabled (Settings → Mobile), and did you paste the current API Token (it changes if you click *Generate new*)? A "connection refused" error usually means Streamlabs isn't listening on that address: restart Streamlabs after enabling the toggle, and/or set Host to one of the addresses from its *IP Addresses* box.
 - **No preview frame** — the feed must actually be running (green dot). Offline channels retry automatically; check the Ingest log.
 - **Ads on the ingested streams** — set your Twitch OAuth token in the Ingest panel.
 - **Text looks different in OBS than in the editor** — almost always a font that isn't installed on one of the two machines (⚠ in the font list). Use *🔤 System Fonts* and pick something both machines have.
