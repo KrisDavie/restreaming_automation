@@ -133,7 +133,7 @@
         <h1>🎮 ALttP Restream</h1>
         <nav>
             <a href="#sec-ingest">1 Feeds</a>
-            <a href="#sec-obs">2 OBS</a>
+            <a href="#sec-obs">2 App</a>
             <a href="#sec-layout">3 Layout</a>
             <a href="#sec-crop">4 Crop</a>
             <a href="#sec-audio">5 Audio</a>
@@ -228,7 +228,7 @@
                 <div class="card-header blue">Scene Preview</div>
                 <div class="card-body">
                     <img class="scene-preview-img" id="scenePreviewImg" style="display:none">
-                    <div class="hint" style="margin-bottom:6px" id="scenePreviewPlaceholder">Click refresh to capture the current OBS scene.</div>
+                    <div class="hint" style="margin-bottom:6px" id="scenePreviewPlaceholder">Click refresh to capture the current scene.</div>
                     <div class="btn-group">
                         <button class="bb btn-sm" onclick="refreshScenePreview()">📷 Refresh</button>
                         <label style="margin:0;font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
@@ -274,7 +274,7 @@
                 <div class="btn-group" style="margin-bottom:8px">
                     <span id="tplModeBtns" style="display:contents"></span>
                     <span style="width:1px;background:var(--border);margin:0 4px"></span>
-                    <button class="bp btn-sm" onclick="applyTemplateToOBS()">✓ Apply Layout to OBS</button>
+                    <button class="bp btn-sm" onclick="applyTemplateToOBS()">✓ Apply Layout</button>
                     <button class="br btn-sm" onclick="clearTplRegion()">✕ Clear Region</button>
                 </div>
                 <!-- Region image bar (visible when a region mode is active) -->
@@ -292,7 +292,7 @@
                         <span style="font-size:12px;font-weight:600;color:var(--teal)">Text Elements</span>
                         <button class="bt btn-sm" onclick="addTplText()">+ Add Text</button>
                         <button class="bb btn-sm" id="btnLoadFonts" onclick="loadSystemFonts(true)" title="List this browser's installed fonts (Chrome/Edge)">🔤 System Fonts</button>
-                        <span class="hint">Rendered as OBS shows it — drag to move. Enter applies, Shift+Enter adds a line. Alignment needs Windows OBS (GDI+). Fonts must exist on the OBS machine; ⚠ marks fonts this browser can't preview.</span>
+                        <span class="hint">Rendered as your streaming app shows it — drag to move. Enter applies, Shift+Enter adds a line. Alignment needs Windows (GDI+ text). Fonts must exist on the streaming PC; ⚠ marks fonts this browser can't preview.</span>
                     </div>
                     <div id="tplTextList"></div>
                 </div>
@@ -326,7 +326,7 @@
                     <button class="br btn-sm" onclick="removeCustomRegion()" title="Remove a custom region">－ Region</button>
                     <span style="width:1px;background:var(--border);margin:0 4px"></span>
                     <button class="bb btn-sm" onclick="refreshCropPreview()">📷 Refresh</button>
-                    <button class="bp btn-sm" onclick="applyAllCrops()" title="Applies every racer's drawn regions">✓ Apply Crops to OBS</button>
+                    <button class="bp btn-sm" onclick="applyAllCrops()" title="Applies every racer's drawn regions">✓ Apply Crops</button>
                     <button class="br btn-sm" onclick="clearCropRegion()">✕ Clear Region</button>
                 </div>
 
@@ -402,7 +402,7 @@
                 <hr style="border-color:var(--border);margin:10px 0">
                 <div style="font-size:13px;font-weight:600;margin-bottom:6px">🖥️ Discord Screen Share</div>
                 <div class="hint" style="margin-bottom:6px">
-                    Opens an OBS projector window you can share to Discord.
+                    Opens a projector window you can share to Discord.
                 </div>
                 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
                     <select id="projectorRes" style="min-width:140px">
@@ -413,7 +413,7 @@
                 <hr style="border-color:var(--border);margin:10px 0">
                 <div style="font-size:13px;font-weight:600;margin-bottom:6px">🎙️ Commentary Audio Capture</div>
                 <div id="audioCaptureDesc" class="hint" style="margin-bottom:6px">
-                    Captures Discord/commentary audio into OBS.
+                    Captures Discord/commentary audio into the stream.
                 </div>
                 <!-- Application Audio Capture (Windows only) -->
                 <div id="appCaptureRow" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
@@ -440,10 +440,10 @@
                 <details class="hint">
                     <summary style="cursor:pointer;font-weight:600;color:var(--text);font-size:12px;margin-bottom:4px">📖 Discord Sharing Guide</summary>
                     <ol style="padding-left:16px;line-height:1.8">
-                        <li>Click <b>Open Projector</b> above — OBS opens a resizable window showing your scene.</li>
-                        <li>In Discord, join a voice channel and click <b>Screen → Window</b>, then pick the OBS projector window.</li>
-                        <li>To capture Discord audio into OBS: click <b>Scan Devices</b>, select the audio output device Discord uses, then <b>Add Source</b>.</li>
-                        <li>Set monitoring to <b>Monitor Only (mute output)</b> so commentary goes into OBS but doesn't echo back.</li>
+                        <li>Click <b>Open Projector</b> above — your streaming app opens a resizable window showing your scene.</li>
+                        <li>In Discord, join a voice channel and click <b>Screen → Window</b>, then pick the projector window.</li>
+                        <li>To capture Discord audio into the stream: on Windows click <b>↻ Apps</b> and pick Discord, or <b>Scan Devices</b> and select the output device Discord uses, then add the source.</li>
+                        <li>Set monitoring to <b>Monitor Only (mute output)</b> so commentary goes into the stream but doesn't echo back.</li>
                     </ol>
                 </details>
                 <div class="log" id="aLog"></div>
@@ -827,7 +827,7 @@ function handleEvent(ev, d) {
     if (ev==='obs:disconnected') setObsDot(false);
     if (ev==='audio:switched') { updateAudioUI(d.active_slot); refreshMixer(); }
     if (ev==='audio:volume' || ev==='audio:mute') refreshMixer();
-    if (ev==='obs:source_created') logMsg($('#oLog'), `Auto-created source: ${d.source}`);
+    if (ev==='obs:source_created') { logMsg($('#oLog'), `Auto-created source: ${d.source}`); refreshMixer(); syncAudioSoloState(); }
     if (ev==='stream:started' || ev==='stream:stopped') updateStreamStatus();
     if (ev==='regions:changed') { customRegions = d.regions || []; renderRegionUI(); }
     if (ev==='template:applied') {
@@ -1570,7 +1570,7 @@ async function refreshMixer() {
         container.innerHTML = '';
         const sceneLabel = $('#mixerScene');
         if (r.status !== 'ok') {
-            container.innerHTML = '<div style="font-size:12px;color:var(--text2);padding:8px">Connect OBS to see audio sources.</div>';
+            container.innerHTML = `<div style="font-size:12px;color:var(--text2);padding:8px">Connect ${appLabel()} to see audio sources.</div>`;
             if (sceneLabel) sceneLabel.textContent = '';
             return;
         }
@@ -1620,7 +1620,7 @@ function updateAudioCaptureUI(platform) {
         fetchApps();
     } else {
         appRow.style.display = 'none';
-        desc.textContent = 'Captures Discord/commentary audio into OBS. Select the audio device Discord outputs to.';
+        desc.textContent = 'Captures Discord/commentary audio into the stream. Select the audio device Discord outputs to.';
     }
 }
 
@@ -1694,7 +1694,7 @@ async function populateProjectorRes() {
     }
     const def = document.createElement('option');
     def.value = '0x0';
-    def.textContent = 'OBS Default';
+    def.textContent = 'App Default';
     sel.appendChild(def);
 }
 
@@ -1788,7 +1788,7 @@ async function obsDisc() {
     catch(e) { logMsg($('#oLog'), e.message); }
 }
 async function obsInit() {
-    try { await apiPost('/api/obs/init'); logMsg($('#oLog'), 'Re-provisioned OBS scene'); }
+    try { await apiPost('/api/obs/init'); logMsg($('#oLog'), 'Re-provisioned the race scene'); }
     catch(e) { logMsg($('#oLog'), e.message); }
 }
 async function loadSc() {
@@ -2053,7 +2053,7 @@ async function uploadTplRegionImage() {
         fileEl.value = '';
         updateTplRegionImgBar();
         drawTplCanvas();
-        logMsg($('#tLog'), `Image attached to R${tplSlot+1} ${labelFor(tplMode)} — Apply Layout to place it in OBS`);
+        logMsg($('#tLog'), `Image attached to R${tplSlot+1} ${labelFor(tplMode)} — Apply Layout to place it`);
     } catch(e) { logMsg($('#tLog'), `Image error: ${e.message}`); }
 }
 
@@ -2070,7 +2070,7 @@ async function removeTplRegionImage() {
         delete _regionImgCache[`${tplSlot}/${tplMode}`];
         updateTplRegionImgBar();
         drawTplCanvas();
-        logMsg($('#tLog'), `Removed R${tplSlot+1} ${labelFor(tplMode)} image — re-apply the layout to update OBS`);
+        logMsg($('#tLog'), `Removed R${tplSlot+1} ${labelFor(tplMode)} image — re-apply the layout to update`);
     } catch(e) { logMsg($('#tLog'), `Image error: ${e.message}`); }
 }
 
@@ -2160,7 +2160,7 @@ function fontSelectHtml(i, t) {
     const opts = fontOptions();
     const list = opts.includes(cur) ? opts : [cur, ...opts];
     const avail = fontAvailable(cur);
-    const warn = avail ? '' : `<span title="'${esc(cur)}' is not installed in this browser — size and shape here are approximate (OBS uses its own machine's fonts)" style="cursor:help">⚠️</span>`;
+    const warn = avail ? '' : `<span title="'${esc(cur)}' is not installed in this browser — size and shape here are approximate (the streaming app uses its own machine's fonts)" style="cursor:help">⚠️</span>`;
     return `<div style="display:flex;gap:2px;align-items:center">
         <select onchange="tplFontChange(${i}, this)" style="margin:0;max-width:130px">
             ${list.map(f => `<option value="${esc(f)}"${f === cur ? ' selected' : ''}${fontAvailable(f) ? '' : ' style="color:var(--text2)"'}>${esc(f)}</option>`).join('')}
@@ -2170,7 +2170,7 @@ function fontSelectHtml(i, t) {
 
 function tplFontChange(i, sel) {
     if (sel.value === '__other') {
-        const name = prompt('Font family name (must be installed on the OBS machine):',
+        const name = prompt('Font family name (must be installed on the streaming PC):',
                             tplRegions.texts[i]?.font || 'Arial');
         if (name) updateTplText(i, 'font', name.trim());
         renderTplTextList();
@@ -2689,7 +2689,7 @@ async function applyTemplateToOBS() {
     try {
         const r = await apiPost(`/api/templates/${tplId}/apply`, {});
         if (r.status === 'ok') {
-            logMsg($('#tLog'), `Applied template to OBS: ${(r.applied||[]).join(', ') || 'nothing (start feeds first)'}`);
+            logMsg($('#tLog'), `Applied layout: ${(r.applied||[]).join(', ') || 'nothing (start feeds first)'}`);
         } else {
             logMsg($('#tLog'), `Apply error: ${r.error || 'unknown'}`);
             toast(`Template apply failed: ${r.error || 'unknown'}`);

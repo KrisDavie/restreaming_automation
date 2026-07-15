@@ -713,6 +713,12 @@ class SlobsController:
             await self.mute_input(feed_name, True)
         except OBSRequestError:
             pass
+
+        # Streamlabs adds Desktop Audio + Mic/Aux globals to every scene
+        # collection — mute them so the restream carries only racer /
+        # commentary audio (unmute in the mixer if actually wanted).
+        await self.mute_global_audio()
+
         try:
             await self.set_scene(scene_name)
         except OBSRequestError:
@@ -721,6 +727,23 @@ class SlobsController:
         log.info("Full scene setup (slobs): scene='%s' slot=%d feed='%s'",
                  scene_name, slot, feed_name)
         return {s.lower(): n for s, n in zip(suffixes, logical_names)}
+
+    async def mute_global_audio(self) -> None:
+        """Mute channel-bound global audio sources (Desktop Audio, Mic/Aux)."""
+        try:
+            for src in await self.request("SourcesService", "getSources") or []:
+                model = self._model(src)
+                if model.get("channel") is None or not model.get("audio"):
+                    continue
+                sid = self._id_of(model)
+                try:
+                    await self.request(f'AudioSource["{sid}"]', "setMuted", True)
+                    log.info("Muted global audio '%s' (unmute in the mixer if needed)",
+                             model.get("name"))
+                except OBSRequestError:
+                    pass
+        except OBSRequestError:
+            pass
 
     # ------------------------------------------------------------------
     # Text / image sources
@@ -1130,19 +1153,24 @@ class SlobsController:
         }
 
     async def get_video_settings(self) -> dict[str, Any]:
-        try:
-            contexts = self._model(await self.request("VideoSettingsService", "contexts"))
-            ctx = self._model(contexts.get("horizontal")
-                              or next(iter(contexts.values()), {}))
-            if ctx.get("baseWidth"):
-                return {
-                    "baseWidth": ctx.get("baseWidth", 1920),
-                    "baseHeight": ctx.get("baseHeight", 1080),
-                    "outputWidth": ctx.get("outputWidth", 1920),
-                    "outputHeight": ctx.get("outputHeight", 1080),
-                }
-        except OBSRequestError as exc:
-            log.warning("VideoSettingsService unavailable (slobs): %s", exc)
+        # NOTE: VideoSettingsService.contexts serializes to empty dicts over
+        # JSON-RPC (native objects) — verified live. 'state' carries plain
+        # dicts with the real values; 'baseResolutions' is the fallback.
+        for method in ("state", "baseResolutions"):
+            try:
+                data = self._model(await self.request("VideoSettingsService", method))
+                ctx = self._model(data.get("horizontal")
+                                  or next(iter(data.values()), {}))
+                if ctx.get("baseWidth"):
+                    return {
+                        "baseWidth": ctx.get("baseWidth", 1920),
+                        "baseHeight": ctx.get("baseHeight", 1080),
+                        "outputWidth": ctx.get("outputWidth", ctx.get("baseWidth", 1920)),
+                        "outputHeight": ctx.get("outputHeight", ctx.get("baseHeight", 1080)),
+                    }
+            except OBSRequestError as exc:
+                log.warning("VideoSettingsService.%s unavailable (slobs): %s", method, exc)
+        log.warning("Could not read Streamlabs canvas resolution — assuming 1920x1080")
         return {"baseWidth": 1920, "baseHeight": 1080,
                 "outputWidth": 1920, "outputHeight": 1080}
 

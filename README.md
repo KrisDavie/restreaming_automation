@@ -175,10 +175,34 @@ Everything works the same as with OBS — layouts, crops, custom regions, text (
 - Sync, audio monitoring and the projector use Streamlabs' *internal* API, which Streamlabs doesn't officially document. It works today (the same mechanism Stream Deck-style tools rely on), but a future Streamlabs update could restrict it — if that happens the dashboard shows a clear "your Streamlabs version may block it" error rather than breaking.
 - Streamlabs Desktop runs on **Windows and macOS only**. If your dashboard server runs on another machine, use one of the addresses from Streamlabs' *IP Addresses* box as Host.
 
+### Windows port conflict ("connection refused" even though everything is enabled)
+
+Windows' NAT service (**winnat**, used by WSL2 / Hyper-V / Docker Desktop) hands out ports from a dynamic pool (49152+) that **includes Streamlabs' ports 59650/59651**. If Windows reserves them before Streamlabs starts, Streamlabs silently can't listen and every connection is refused.
+
+**Diagnose** (any terminal):
+
+```
+netsh int ipv4 show excludedportrange protocol=tcp
+```
+
+If 59650 falls inside one of the listed ranges, that's the conflict.
+
+**Fix permanently** — open *Command Prompt as Administrator* and run:
+
+```
+net stop winnat
+netsh int ipv4 add excludedportrange protocol=tcp startport=59650 numberofports=2
+net start winnat
+```
+
+then restart Streamlabs Desktop. This reserves 59650–59651 so Windows never hands them to WSL/Hyper-V again; the exclusion survives reboots (it shows with a `*` in the diagnose listing).
+
+**Consequences, so you know what you're trading:** stopping `winnat` briefly drops WSL2/Hyper-V/Docker networking (do it while those aren't busy — they recover when it restarts), and those two ports are permanently withheld from the dynamic pool — harmless unless some other software is explicitly configured to use exactly 59650/59651. Without the `netsh` exclusion, a plain `net stop winnat` + `net start winnat` also frees the port, but only until some future boot wins the race again.
+
 ## Tips & troubleshooting
 
 - **OBS won't connect** — is OBS running, WebSocket server enabled (Tools → WebSocket Server Settings), and does `OBS_WS_PASSWORD` in `.env` match? The error message in the panel says what failed.
-- **Streamlabs won't connect** — is *Allow third party connections* enabled (Settings → Mobile), and did you paste the current API Token (it changes if you click *Generate new*)? A "connection refused" error usually means Streamlabs isn't listening on that address: restart Streamlabs after enabling the toggle, and/or set Host to one of the addresses from its *IP Addresses* box.
+- **Streamlabs won't connect** — is *Allow third party connections* enabled (Settings → Mobile), and did you paste the current API Token (it changes if you click *Generate new*)? A "connection refused" error usually means Streamlabs isn't listening: on Windows this is often the **winnat port conflict** — see [Windows port conflict](#windows-port-conflict-connection-refused-even-though-everything-is-enabled). Otherwise restart Streamlabs after enabling the toggle, and/or set Host to one of the addresses from its *IP Addresses* box.
 - **No preview frame** — the feed must actually be running (green dot). Offline channels retry automatically; check the Ingest log.
 - **Ads on the ingested streams** — set your Twitch OAuth token in the Ingest panel.
 - **Text looks different in OBS than in the editor** — almost always a font that isn't installed on one of the two machines (⚠ in the font list). Use *🔤 System Fonts* and pick something both machines have.

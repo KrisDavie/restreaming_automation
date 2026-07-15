@@ -868,6 +868,10 @@ class OBSController:
         except OBSRequestError:
             pass
 
+        # 8b. Mute global audio (Desktop Audio / Mic) so the restream carries
+        #     only racer/commentary audio — unmute in the mixer if wanted
+        await self.mute_global_audio()
+
         # 9. Switch to the scene
         try:
             await self.set_scene(scene_name)
@@ -878,6 +882,19 @@ class OBSController:
                  scene_name, slot, feed_name,
                  {n: self._scene_items.get((scene_name, n)) for n in logical_names})
         return {s.lower(): n for s, n in zip(suffixes, logical_names)}
+
+    async def mute_global_audio(self) -> None:
+        """Mute OBS's global audio inputs (Desktop Audio, Mic/Aux) if any."""
+        try:
+            specials = await self.request("GetSpecialInputs", {})
+        except OBSRequestError:
+            return
+        for name in {v for v in specials.values() if v}:
+            try:
+                await self.mute_input(name, True)
+                log.info("Muted global audio '%s' (unmute in the mixer if needed)", name)
+            except OBSRequestError:
+                pass
 
     async def ensure_source_in_scene(
         self, scene_name: str, source_name: str
