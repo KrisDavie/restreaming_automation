@@ -10,6 +10,7 @@ import signal
 import shutil
 import sys
 import tempfile
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -24,6 +25,134 @@ _RECONNECT_DELAY_INITIAL = 3     # seconds before first retry
 _RECONNECT_DELAY_MAX = 30        # max back-off
 _RECONNECT_MAX_ATTEMPTS = 10     # give up after this many consecutive failures
 _RECONNECT_STABLE_SECS = 30      # pipeline must survive this long to reset back-off
+
+# Race sync (per-slot UDP delay relay): FFmpeg writes to base+offset+slot, the
+# relay buffers `delay_ms` and forwards to base+slot where the app reads it.
+_RELAY_PORT_OFFSET = 500
+_MAX_SYNC_DELAY_MS = 30_000                 # 30 s ceiling (buffer RAM is tiny: TS bitrate * 30s)
+_RELAY_MAX_BUFFER_BYTES = 256 * 1024 * 1024  # per-slot safety cap
+
+# On Windows, request 1 ms system timer resolution once so the relay pacer
+# (and asyncio sleeps) are precise — the default ~15 ms granularity makes the
+# relay deliver in bursts, which makes OBS's media clock hitch each GOP.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.winmm.timeBeginPeriod(1)
+    except Exception:
+        pass
+
+
+class UdpDelayRelay:
+    """Buffers a local UDP packet stream and re-emits it ``delay_ms`` later.
+
+    This is how race sync works: the racer's entire MPEG-TS stream (audio and
+    video interleaved) is held back as raw bytes, so A/V can never drift apart
+    and there is no re-encode.  A 1 ms drain loop reproduces the original
+    inter-packet timing (shifted by the delay) precisely, so the downstream
+    media player's clock stays smooth.
+
+    NOTE: the media player only adopts a NEW delay when it re-reads the stream
+    fresh (a live delay change leaves a gap it catches up on), so the server
+    restarts the media source after changing the delay.
+    """
+
+    def __init__(self, listen_port: int, forward_port: int) -> None:
+        self.listen_port = listen_port
+        self.forward_port = forward_port
+        self._delay_s = 0.0
+        self._buf: deque[tuple[float, bytes]] = deque()
+        self._buf_bytes = 0
+        self._dropped_warned = False
+        self._transport: asyncio.DatagramTransport | None = None
+        self._pacer_task: asyncio.Task[None] | None = None
+
+    @property
+    def delay_ms(self) -> int:
+        return int(round(self._delay_s * 1000))
+
+    def set_delay(self, delay_ms: int) -> int:
+        self._delay_s = max(0, min(int(delay_ms), _MAX_SYNC_DELAY_MS)) / 1000.0
+        return self.delay_ms
+
+    async def start(self) -> None:
+        loop = asyncio.get_running_loop()
+        relay = self
+
+        class _Proto(asyncio.DatagramProtocol):
+            def datagram_received(self, data: bytes, addr: Any) -> None:
+                relay._on_packet(data)
+
+            def error_received(self, exc: Exception) -> None:
+                pass  # ICMP unreachable while the reader isn't up yet
+
+        self._transport, _ = await loop.create_datagram_endpoint(
+            _Proto, local_addr=("127.0.0.1", self.listen_port))
+
+        sock = self._transport.get_extra_info("socket")
+        if sock is not None:
+            import socket as _socket
+            # Large buffers: a keyframe arrives as a ~150-packet microburst;
+            # the OS default (~64 KB) drops the tail and corrupts each GOP.
+            for opt in (_socket.SO_RCVBUF, _socket.SO_SNDBUF):
+                try:
+                    sock.setsockopt(_socket.SOL_SOCKET, opt, 8 * 1024 * 1024)
+                except OSError:
+                    pass
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    SIO_UDP_CONNRESET = 0x9800000C
+                    ctypes.windll.ws2_32.WSAIoctl(
+                        sock.fileno(), SIO_UDP_CONNRESET,
+                        ctypes.byref(ctypes.c_ulong(0)), 4,
+                        None, 0, ctypes.byref(ctypes.c_ulong(0)), None, None)
+                except Exception:
+                    pass
+
+        self._pacer_task = asyncio.create_task(
+            self._pacer(), name=f"relay-pacer-{self.listen_port}")
+        log.info("Delay relay udp:%d -> udp:%d (delay %d ms)",
+                 self.listen_port, self.forward_port, self.delay_ms)
+
+    def close(self) -> None:
+        if self._pacer_task:
+            self._pacer_task.cancel()
+            self._pacer_task = None
+        if self._transport:
+            self._transport.close()
+            self._transport = None
+        self._buf.clear()
+        self._buf_bytes = 0
+
+    def _on_packet(self, data: bytes) -> None:
+        if self._transport is None:
+            return
+        # Fast path: no delay and nothing queued → forward immediately
+        if self._delay_s <= 0 and not self._buf:
+            self._transport.sendto(data, ("127.0.0.1", self.forward_port))
+            return
+        if self._buf_bytes > _RELAY_MAX_BUFFER_BYTES:
+            if not self._dropped_warned:
+                log.warning("Relay %d: buffer cap hit — dropping oldest", self.listen_port)
+                self._dropped_warned = True
+            _, old = self._buf.popleft()
+            self._buf_bytes -= len(old)
+        self._buf.append((asyncio.get_running_loop().time(), data))
+        self._buf_bytes += len(data)
+
+    async def _pacer(self) -> None:
+        loop = asyncio.get_running_loop()
+        fwd = ("127.0.0.1", self.forward_port)
+        while True:
+            now = loop.time()
+            # Release every packet whose (arrival + delay) is due, in order.
+            while self._buf and self._buf[0][0] + self._delay_s <= now:
+                _, data = self._buf.popleft()
+                self._buf_bytes -= len(data)
+                if self._transport is not None:
+                    self._transport.sendto(data, fwd)
+            await asyncio.sleep(0.001)  # 1 ms tick (precise via timeBeginPeriod)
 
 
 def parse_vod_offset(url: str, explicit_offset: str = "") -> int:
@@ -75,6 +204,12 @@ class IngestProtocol(str, Enum):
     SRT = "srt"
 
 
+# Race sync is applied inside the streaming app (video delay filter + matching
+# audio sync offset). The app-side audio offset caps at 20 s (obs-websocket
+# enforces this; Streamlabs matches for parity).
+_MAX_SYNC_DELAY_MS = 20_000
+
+
 @dataclass
 class IngestFeed:
     """Represents a single racer's stream ingest pipeline."""
@@ -93,15 +228,22 @@ class IngestFeed:
     _monitor_task: Optional[asyncio.Task[None]] = field(default=None, repr=False)
 
     @property
+    def relay_listen_port(self) -> int:
+        """Internal port FFmpeg writes to (UDP); the delay relay forwards to
+        local_port, where the streaming app reads."""
+        return self.local_port + _RELAY_PORT_OFFSET
+
+    @property
     def local_url(self) -> str:
-        proto = self.protocol.value
+        """Where FFmpeg writes.  For UDP this is the relay's listen port so
+        race-sync delay can be applied; for SRT (no relay) it's direct."""
         if self.protocol == IngestProtocol.SRT:
             return f"srt://127.0.0.1:{self.local_port}?mode=listener"
-        return f"{proto}://127.0.0.1:{self.local_port}?pkt_size=1316"
+        return f"udp://127.0.0.1:{self.relay_listen_port}?pkt_size=1316"
 
     @property
     def obs_input_url(self) -> str:
-        """URL that OBS Media Source should point to."""
+        """URL that the streaming app's media source reads (relay output for UDP)."""
         if self.protocol == IngestProtocol.SRT:
             return f"srt://127.0.0.1:{self.local_port}?mode=caller"
         return f"udp://127.0.0.1:{self.local_port}?buffer_size=1048576&fifo_size=1000000"
@@ -110,6 +252,65 @@ class IngestFeed:
     def snapshot_path(self) -> Path:
         """Path to the periodic snapshot JPEG written by FFmpeg."""
         return Path(tempfile.gettempdir()) / f"restream_slot{self.slot}_preview.jpg"
+
+
+def _make_kill_on_close_job() -> int | None:
+    """Create a Windows Job Object that kills its processes when the last
+    handle closes — i.e. child pipelines die with the server.
+
+    Without this, Windows leaves streamlink/ffmpeg running when the server
+    exits uncleanly; an orphaned ffmpeg still blasting the ingest ports would
+    interleave with the next run's stream and corrupt it.
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class IO_COUNTERS(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_uint64) for n in (
+                "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+        class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                ("IoInfo", IO_COUNTERS),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        kernel32 = ctypes.windll.kernel32
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            return None
+        info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = 0x2000  # KILL_ON_JOB_CLOSE
+        JobObjectExtendedLimitInformation = 9
+        if not kernel32.SetInformationJobObject(
+                job, JobObjectExtendedLimitInformation,
+                ctypes.byref(info), ctypes.sizeof(info)):
+            kernel32.CloseHandle(job)
+            return None
+        return job
+    except Exception:
+        return None
 
 
 class IngestManager:
@@ -127,6 +328,28 @@ class IngestManager:
         self._twitch_token: str = config.twitch_oauth_token
         # Per-slot flag to disable auto-reconnect (set on explicit stop)
         self._reconnect_enabled: dict[int, bool] = {}
+        # Per-slot race-sync delay (ms) — source of truth, survives reconnects.
+        self._sync_delay_ms: dict[int, int] = {}
+        # Per-slot UDP delay relays (the actual delay mechanism, UDP only).
+        self._relays: dict[int, UdpDelayRelay] = {}
+        # Windows: children join a kill-on-close job so they die with us
+        self._win_job = _make_kill_on_close_job()
+
+    def _adopt_process(self, proc: asyncio.subprocess.Process | None) -> None:
+        """Put a child into the kill-on-close job (Windows; no-op elsewhere)."""
+        if self._win_job is None or proc is None:
+            return
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            PROCESS_SET_QUOTA, PROCESS_TERMINATE = 0x0100, 0x0001
+            handle = kernel32.OpenProcess(
+                PROCESS_SET_QUOTA | PROCESS_TERMINATE, False, proc.pid)
+            if handle:
+                kernel32.AssignProcessToJobObject(self._win_job, handle)
+                kernel32.CloseHandle(handle)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Public API
@@ -154,9 +377,19 @@ class IngestManager:
 
     async def start_feed(
         self, slot: int, url: str, quality: str = "best", start_offset: str = "",
+        preserve_sync: bool = False,
     ) -> IngestFeed:
-        """Start an ingest pipeline for the given slot."""
+        """Start an ingest pipeline for the given slot.
+
+        Starting a NEW stream resets the slot's sync delay to 0 — small
+        stream changes shift timing anyway, so a remembered delay would be
+        wrong. ``preserve_sync=True`` keeps it (used by Reconnect, which
+        resumes the same stream mid-race).
+        """
         async with self._lock:
+            if not preserve_sync and self._sync_delay_ms.get(slot):
+                log.info("Slot %d: new stream — sync delay reset to 0", slot)
+                self._sync_delay_ms[slot] = 0
             if slot in self._feeds and self._feeds[slot].process is not None:
                 log.info("Stopping existing feed on slot %d before starting new one", slot)
                 await self._stop_feed_unlocked(slot)
@@ -172,6 +405,8 @@ class IngestManager:
                 protocol=protocol,
                 start_offset=offset_secs,
             )
+            # The delay relay must be listening before FFmpeg starts sending.
+            await self._ensure_relay(slot, feed)
             try:
                 await self._spawn_pipeline(feed)
             except BaseException:
@@ -203,6 +438,64 @@ class IngestManager:
     def get_feed(self, slot: int) -> IngestFeed | None:
         return self._feeds.get(slot)
 
+    # ------------------------------------------------------------------
+    # Race sync (per-slot UDP delay relay)
+    # ------------------------------------------------------------------
+    #
+    # The relay delays the whole MPEG-TS stream (A/V together) so sync can
+    # never break and there's no popping.  The delay value is the source of
+    # truth here; the streaming app only needs its media source re-read after
+    # a change (handled by the server) to adopt the new delay.
+
+    @property
+    def sync_supported(self) -> bool:
+        """Relay-based sync works for UDP ingest (the default)."""
+        return self._config.ingest_protocol == IngestProtocol.UDP.value
+
+    async def _ensure_relay(self, slot: int, feed: IngestFeed) -> None:
+        if feed.protocol != IngestProtocol.UDP:
+            return
+        relay = self._relays.get(slot)
+        if relay is None:
+            relay = UdpDelayRelay(feed.relay_listen_port, feed.local_port)
+            # A relay closed moments ago (slot restart) can leave the port
+            # briefly unreleased — retry before declaring a conflict.
+            last_err: OSError | None = None
+            for _ in range(6):
+                try:
+                    await relay.start()
+                    last_err = None
+                    break
+                except OSError as exc:
+                    last_err = exc
+                    await asyncio.sleep(0.25)
+            if last_err is not None:
+                raise RuntimeError(
+                    f"Cannot start the sync relay for Racer {slot + 1}: UDP port "
+                    f"{feed.relay_listen_port} is already in use ({last_err}). "
+                    "Close whatever is bound to it, or change INGEST_BASE_PORT."
+                )
+            self._relays[slot] = relay
+        relay.set_delay(self._sync_delay_ms.get(slot, 0))
+
+    def get_sync_delay(self, slot: int) -> int:
+        return self._sync_delay_ms.get(slot, 0)
+
+    def set_sync_delay(self, slot: int, delay_ms: int) -> int:
+        """Store the sync delay for a slot (clamped) and apply it to a live
+        relay. Survives reconnects."""
+        delay_ms = max(0, min(int(delay_ms), _MAX_SYNC_DELAY_MS))
+        self._sync_delay_ms[slot] = delay_ms
+        relay = self._relays.get(slot)
+        if relay is not None:
+            relay.set_delay(delay_ms)
+        log.info("Sync delay for slot %d = %d ms (relay %s)",
+                 slot, delay_ms, "live" if relay else "stored")
+        return delay_ms
+
+    def nudge_sync_delay(self, slot: int, delta_ms: int) -> int:
+        return self.set_sync_delay(slot, self.get_sync_delay(slot) + delta_ms)
+
     async def query_qualities(self, url: str) -> list[str]:
         """Ask streamlink which stream qualities are available for *url*.
 
@@ -219,6 +512,7 @@ class IngestManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
+        self._adopt_process(proc)
         try:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
         except asyncio.TimeoutError:
@@ -282,6 +576,10 @@ class IngestManager:
             except asyncio.CancelledError:
                 pass
         await self._kill_feed_procs(feed)
+        # Close the sync relay (delay value is kept for the next start)
+        relay = self._relays.pop(slot, None)
+        if relay is not None:
+            relay.close()
         # Clean up snapshot file
         try:
             feed.snapshot_path.unlink(missing_ok=True)
@@ -443,6 +741,7 @@ class IngestManager:
                 stdout=sl_w,
                 stderr=asyncio.subprocess.DEVNULL,
             )
+            self._adopt_process(feed._sl_proc)
             _close(sl_w)
 
             if tee_bin:
@@ -463,6 +762,7 @@ class IngestManager:
                     stderr=asyncio.subprocess.DEVNULL,
                     pass_fds=(sn_w,),
                 )
+                self._adopt_process(feed._tee_proc)
                 _close(sl_r)
                 _close(ff_w)
                 _close(sn_w)
@@ -473,6 +773,7 @@ class IngestManager:
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
+                self._adopt_process(feed.process)
                 _close(ff_r)
 
                 feed._snap_proc = await asyncio.create_subprocess_exec(
@@ -482,6 +783,7 @@ class IngestManager:
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
+                self._adopt_process(feed._snap_proc)
                 _close(sn_r)
             else:
                 # Windows (no /dev/fd, no pass_fds) or minimal systems without
@@ -493,6 +795,7 @@ class IngestManager:
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
+                self._adopt_process(feed.process)
                 _close(sl_r)
         finally:
             for fd in list(open_fds):
@@ -550,6 +853,9 @@ class IngestManager:
                 async with self._lock:
                     if self._feeds.get(slot) is feed:
                         self._feeds.pop(slot, None)
+                    relay = self._relays.pop(slot, None)
+                    if relay is not None:
+                        relay.close()
                 try:
                     feed.snapshot_path.unlink(missing_ok=True)
                 except OSError:

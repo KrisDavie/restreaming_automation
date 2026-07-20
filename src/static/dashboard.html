@@ -452,7 +452,7 @@
 
         <section class="card">
             <div class="card-header purple"><span class="step">6</span> Sync Nudger
-                <span class="hint" style="margin-left:auto">Delay the faster feed until both racers match</span>
+                <span class="hint" style="margin-left:auto">Delay the faster feed until both racers match — audio &amp; video shift together</span>
             </div>
             <div class="card-body">
                 <div class="btn-group" style="margin-bottom:8px" id="syncBtns"></div>
@@ -808,7 +808,7 @@ function wsConnect() {
 }
 wsConnect();
 function handleEvent(ev, d) {
-    if (ev==='ingest:started') { setDot(d.slot, true); const el = document.getElementById(`u${d.slot}`); if (el && d.url) el.value = d.url; }
+    if (ev==='ingest:started') { setDot(d.slot, true); const el = document.getElementById(`u${d.slot}`); if (el && d.url) el.value = d.url; refreshSyncDelay(); }
     if (ev==='ingest:stopped') setDot(d.slot, false);
     if (ev==='ingest:reconnecting') {
         logMsg($('#iLog'), `⚠ Racer ${d.slot+1}: stream interrupted, reconnecting (attempt ${d.attempt}, ${d.delay}s)…`);

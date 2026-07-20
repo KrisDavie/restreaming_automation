@@ -676,6 +676,9 @@ class SlobsController:
             "close_when_inactive": False,
         }
         feed_id = await self._create_or_update_source(feed_name, "ffmpeg_source", settings)
+        # (The server re-applies the slot's race-sync delay after provisioning
+        # via set_sync_offset — 0 for a fresh stream, which clears any leftover
+        # filter/offset.)
 
         scene_id = await self._scene_id(scene_name)
         existing = [
@@ -1065,15 +1068,27 @@ class SlobsController:
             pass
         return 0
 
+    # Keep parity with OBS: match video + audio delay, cap at 20 s.
+    MAX_SYNC_MS = 20_000
+
     async def set_sync_offset(self, source_name: str, offset_ms: int) -> int:
+        """Delay a racer feed's video AND audio by the same amount, live.
+
+        Video via the internal async_delay_filter, audio via AudioSource
+        syncOffset (both in ms).  A delay of 0 removes the filter and zeroes
+        the offset.  Returns the applied offset in ms.
+        """
         input_name = self._input_name_for(source_name)
-        delay = max(0, offset_ms)
+        delay = max(0, min(int(offset_ms), self.MAX_SYNC_MS))
         src_id = await self._source_id(input_name)
         fname = self._delay_filter_name(input_name)
         try:
             filters = await self.request("SourceFiltersService", "getFilters", src_id)
             existing = any(self._model(f).get("name") == fname for f in filters or [])
-            if existing:
+            if delay <= 0:
+                if existing:
+                    await self.request("SourceFiltersService", "remove", src_id, fname)
+            elif existing:
                 await self.request("SourceFiltersService", "setSettings",
                                    src_id, fname, {"delay_ms": delay})
             else:
@@ -1082,7 +1097,7 @@ class SlobsController:
         except OBSRequestError as exc:
             raise OBSRequestError("SourceFiltersService", exc.code,
                                   f"{self._SYNC_HINT} ({exc.comment})")
-        # Audio offset in ms via internal AudioSource.setSettings
+        # Matching audio delay in ms via internal AudioSource.setSettings
         try:
             await self.request(f'AudioSource["{src_id}"]', "setSettings",
                                {"syncOffset": delay})
@@ -1096,6 +1111,40 @@ class SlobsController:
         new_ms = max(0, current + delta_ms)
         await self.set_sync_offset(source_name, new_ms)
         return new_ms
+
+    async def clear_app_delay(self, source_name: str) -> None:
+        """Remove any Streamlabs-side delay (filter + syncOffset). Race sync
+        is done in the ingest relay now; clears old residue."""
+        input_name = self._input_name_for(source_name)
+        try:
+            src_id = await self._source_id(input_name)
+        except OBSRequestError:
+            return
+        fname = self._delay_filter_name(input_name)
+        try:
+            filters = await self.request("SourceFiltersService", "getFilters", src_id)
+            if any(self._model(f).get("name") == fname for f in filters or []):
+                await self.request("SourceFiltersService", "remove", src_id, fname)
+        except OBSRequestError:
+            pass
+        try:
+            await self.request(f'AudioSource["{src_id}"]', "setSettings", {"syncOffset": 0})
+        except OBSRequestError:
+            pass
+
+    async def restart_media_source(self, source_name: str) -> None:
+        """Reopen the media source so it re-reads its relay-delayed stream and
+        adopts the current delay."""
+        input_name = self._input_name_for(source_name)
+        try:
+            model = await self._find_source(input_name)
+            if not model:
+                return
+            src_id = self._id_of(model)
+            settings = await self.request(f'Source["{src_id}"]', "getSettings")
+            await self.request(f'Source["{src_id}"]', "updateSettings", settings or {})
+        except OBSRequestError as exc:
+            log.warning("restart_media_source('%s') failed (slobs): %s", input_name, exc)
 
     # ------------------------------------------------------------------
     # Streaming / status / video / projector

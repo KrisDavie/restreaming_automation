@@ -424,46 +424,91 @@ class OBSController:
         except OBSRequestError:
             return 0
 
+    # obs-websocket caps the audio sync offset at 20 s; keep video and audio
+    # delay matched by clamping both to it (OBS does NOT auto-delay audio to
+    # a video-delay filter, so an unmatched pair desyncs).
+    MAX_SYNC_MS = 20_000
+
     async def set_sync_offset(self, source_name: str, offset_ms: int) -> int:
-        """Set the sync delay (video + audio) for a source.
+        """Delay a racer feed's video AND audio by the same amount, live.
 
-        Uses an OBS *Video Delay (Async)* source filter for video and
-        ``SetInputAudioSyncOffset`` for audio so both are delayed
-        uniformly without restarting the media source.
-
-        Returns the new offset in ms.
+        Video is delayed with an OBS *Video Delay (Async)* filter; audio with
+        ``SetInputAudioSyncOffset`` (both in ms).  A delay of 0 removes the
+        filter and zeroes the offset.  Returns the applied offset in ms.
         """
         input_name = self._input_name_for(source_name)
-        delay = max(0, offset_ms)
+        delay = max(0, min(int(offset_ms), self.MAX_SYNC_MS))
         filter_name = f"{input_name}_Delay"
 
-        # Video delay via async_delay_filter
-        try:
-            await self.request("GetSourceFilter", {
-                "sourceName": input_name,
-                "filterName": filter_name,
-            })
-            await self.request("SetSourceFilterSettings", {
-                "sourceName": input_name,
-                "filterName": filter_name,
-                "filterSettings": {"delay_ms": delay},
-            })
-        except OBSRequestError:
-            await self.request("CreateSourceFilter", {
-                "sourceName": input_name,
-                "filterName": filter_name,
-                "filterKind": "async_delay_filter",
-                "filterSettings": {"delay_ms": delay},
-            })
+        if delay <= 0:
+            # Remove the video delay filter entirely (a lingering 0-delay
+            # filter is harmless but we keep the scene clean)
+            try:
+                await self.request("RemoveSourceFilter", {
+                    "sourceName": input_name, "filterName": filter_name,
+                })
+            except OBSRequestError:
+                pass
+        else:
+            try:
+                await self.request("GetSourceFilter", {
+                    "sourceName": input_name, "filterName": filter_name,
+                })
+                await self.request("SetSourceFilterSettings", {
+                    "sourceName": input_name,
+                    "filterName": filter_name,
+                    "filterSettings": {"delay_ms": delay},
+                })
+            except OBSRequestError:
+                await self.request("CreateSourceFilter", {
+                    "sourceName": input_name,
+                    "filterName": filter_name,
+                    "filterKind": "async_delay_filter",
+                    "filterSettings": {"delay_ms": delay},
+                })
 
-        # Audio delay to match — obs-websocket v5 takes MILLISECONDS here
-        # (protocol range -950..20000; the video filter has no such cap)
+        # Matching audio delay (ms). OBS won't auto-delay audio to the filter.
         await self.request("SetInputAudioSyncOffset", {
             "inputName": input_name,
-            "inputAudioSyncOffset": min(delay, 20_000),
+            "inputAudioSyncOffset": delay,
         })
         log.info("Sync delay for '%s' set to %d ms", source_name, delay)
         return delay
+
+    async def clear_app_delay(self, source_name: str) -> None:
+        """Remove any OBS-side delay (video filter + audio offset).
+
+        Race sync is done in the ingest relay now; this clears residue from
+        earlier filter/offset-based versions so it can't double-delay.
+        """
+        input_name = self._input_name_for(source_name)
+        try:
+            await self.request("RemoveSourceFilter", {
+                "sourceName": input_name, "filterName": f"{input_name}_Delay",
+            })
+        except OBSRequestError:
+            pass
+        try:
+            await self.request("SetInputAudioSyncOffset", {
+                "inputName": input_name, "inputAudioSyncOffset": 0,
+            })
+        except OBSRequestError:
+            pass
+
+    async def restart_media_source(self, source_name: str) -> None:
+        """Reopen a media input so it re-reads its (relay-delayed) stream and
+        adopts the current delay.  Re-applying the input settings makes the
+        ffmpeg source reconnect."""
+        input_name = self._input_name_for(source_name)
+        try:
+            cur = await self.request("GetInputSettings", {"inputName": input_name})
+            await self.request("SetInputSettings", {
+                "inputName": input_name,
+                "inputSettings": cur.get("inputSettings", {}),
+                "overlay": True,
+            })
+        except OBSRequestError as exc:
+            log.warning("restart_media_source('%s') failed: %s", input_name, exc)
 
     async def nudge_sync_offset(self, source_name: str, delta_ms: int) -> int:
         """Increment/decrement the sync delay by *delta_ms* ms.
@@ -799,7 +844,10 @@ class OBSController:
             except OBSRequestError:
                 pass
 
-        # 2. Create or update the single media input
+        # 2. Create or update the single media input.
+        #    (The server re-applies the slot's race-sync delay after
+        #    provisioning via set_sync_offset — 0 for a fresh stream, which
+        #    clears any leftover filter/offset.)
         await self.create_media_source(scene_name, feed_name, input_url)
 
         # 3. Count existing scene items for this feed

@@ -155,7 +155,9 @@ Cut the game/tracker/timer out of each racer's full stream. Requires a running f
 Racers' streams arrive with different delays; this aligns them.
 
 - Pick the racer that is **ahead**, then add delay with the **+100 ms … +5 s** buttons until both feeds show the same moment (use a shared visual cue — a chest opening, a menu). The − buttons take delay back out, **Reset** returns to zero, and the custom field nudges by any amount.
-- Delay applies to video *and* audio together, live, without restarting the feed.
+- The delay is applied **inside the app's ingest pipeline**: a per-racer buffer holds that racer's whole stream (audio and video as one), so A/V can never drift apart and there's no re-encode, popping, or extra load on your streaming app. It works **identically on OBS Studio and Streamlabs Desktop**, up to 30 seconds.
+- **Changing the delay briefly reloads that racer's feed** (~1–2 s) so the streaming app re-reads it at the new delay — so set the delay while getting ready rather than mid-action where possible.
+- The delay survives mid-race drops (auto-reconnect and **↻ Reconnect** keep it, since that's the same stream resuming) — but **starting a new stream on a slot resets that racer's delay to 0**, because a different stream has different timing anyway. Requires the default UDP ingest (`INGEST_PROTOCOL=udp`).
 
 ---
 
@@ -172,7 +174,7 @@ Everything works the same as with OBS — layouts, crops, custom regions, text (
 
 - **Scene Preview is unavailable** (Streamlabs has no screenshot API); the panel hides itself.
 - **Projector size can't be preset** — *Open Projector* still works, just resize the window it opens by hand before sharing it to Discord.
-- Sync, audio monitoring and the projector use Streamlabs' *internal* API, which Streamlabs doesn't officially document. It works today (the same mechanism Stream Deck-style tools rely on), but a future Streamlabs update could restrict it — if that happens the dashboard shows a clear "your Streamlabs version may block it" error rather than breaking.
+- Sync works the same as on OBS (it's done in the ingest pipeline, not the app). Audio monitoring and the projector use Streamlabs' *internal* API, which Streamlabs doesn't officially document. Those work today (the same mechanism Stream Deck-style tools rely on), but a future Streamlabs update could restrict them — if that happens the dashboard shows a clear "your Streamlabs version may block it" error rather than breaking.
 - Streamlabs Desktop runs on **Windows and macOS only**. If your dashboard server runs on another machine, use one of the addresses from Streamlabs' *IP Addresses* box as Host.
 
 ### Windows port conflict ("connection refused" even though everything is enabled)

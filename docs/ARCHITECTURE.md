@@ -59,6 +59,18 @@ On POSIX the stream is duplicated with `tee` into a second, throw-away FFmpeg th
 back-pressure the real-time copy. On Windows (no `/dev/fd`) a single dual-output FFmpeg
 produces both the copy stream and the snapshots.
 
+**Race sync** is implemented here too: each slot's stream passes through a small
+in-process UDP delay relay (FFmpeg writes to an internal port `base+500+slot`; the
+relay buffers packets and forwards them `delay_ms` later to the app-facing port
+`base+slot`). Because the whole MPEG-TS stream is delayed as one set of bytes, audio
+and video can never drift apart, there's no re-encode/popping, and both streaming apps
+behave identically (up to a 30 s cap). A 1 ms drain loop (with `timeBeginPeriod(1)` on
+Windows for a precise system timer) reproduces the original inter-packet timing so the
+media player's clock stays smooth — coarse pacing makes OBS hitch every GOP. The
+streaming app only adopts a *changed* delay when its media source re-reads the stream,
+so the server restarts that source on a delay change; provisioning also clears any
+legacy filter/offset-based sync residue.
+
 Feeds auto-reconnect with exponential back-off when they die unexpectedly. Back-off only
 resets after a pipeline has stayed alive for 30 s, so an offline channel keeps backing off
 instead of hammering Twitch. After 10 consecutive failures the feed is dropped and the
@@ -110,10 +122,11 @@ Streamlabs specifics worth knowing:
 - Scene items have no "bounds": stretch-to-rect is emulated as
   `scale = target / (source_size − crop)`, with target rects remembered per
   item so later crop changes keep the on-screen size.
-- Sync (async_delay_filter + audio `syncOffset`), audio monitoring and the
-  projector ride Streamlabs' *internal* API — reachable because its remote
-  API falls back to internal services. Undocumented, hence every such call
-  degrades into a clear error if a future Streamlabs build blocks it.
+- Race sync is app-independent (the ingest relay), so it needs nothing
+  special from Streamlabs. Audio monitoring and the projector ride
+  Streamlabs' *internal* API — reachable because its remote API falls back
+  to internal services. Undocumented, hence every such call degrades into a
+  clear error if a future Streamlabs build blocks it.
 - "Expensive" calls (`getPropertiesFormData`) are rate-limited by Streamlabs;
   the controller serializes them with a minimum interval.
 

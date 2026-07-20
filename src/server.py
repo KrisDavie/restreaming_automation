@@ -348,6 +348,7 @@ async def _provision_running_feeds() -> None:
                 sources = await obs.setup_full_scene(
                     RACE_SCENE, slot, feed.obs_input_url,
                 )
+                await _apply_feed_sync(slot)
                 log.info("Retroactively provisioned slot %d → %s", slot, sources)
             except Exception as exc:
                 log.warning("Retroactive provision failed for slot %d: %s", slot, exc)
@@ -478,7 +479,11 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
 @app.post("/api/ingest/start")
 async def ingest_start(req: IngestStartRequest) -> dict[str, Any]:
-    feed = await ingest.start_feed(req.slot, req.url, req.quality, req.start_offset)
+    try:
+        feed = await ingest.start_feed(req.slot, req.url, req.quality, req.start_offset)
+    except Exception as exc:
+        log.warning("Feed start failed for slot %d: %s", req.slot, exc)
+        raise HTTPException(status_code=409, detail=str(exc))
     await broadcast("ingest:started", {
         "slot": feed.slot, "url": feed.url, "local_url": feed.obs_input_url,
     })
@@ -490,6 +495,9 @@ async def ingest_start(req: IngestStartRequest) -> dict[str, Any]:
                 RACE_SCENE, req.slot, feed.obs_input_url,
             )
             log.info("Auto-created OBS sources for slot %d: %s", req.slot, sources)
+            # Re-apply this slot's race-sync delay (0 for a fresh stream, which
+            # clears any leftover video-delay filter / audio offset)
+            await _apply_feed_sync(req.slot)
             await broadcast("obs:source_created", {
                 "slot": req.slot, "source": sources.get("game", ""),
             })
@@ -556,7 +564,13 @@ async def ingest_reconnect(req: IngestStopRequest) -> dict[str, Any]:
     url, quality, offset = feed.url, feed.quality, str(feed.start_offset)
     await ingest.stop_feed(req.slot)
     await broadcast("ingest:stopped", {"slot": req.slot})
-    new_feed = await ingest.start_feed(req.slot, url, quality, offset)
+    try:
+        # Same stream resuming mid-race → keep the racer's sync delay
+        new_feed = await ingest.start_feed(req.slot, url, quality, offset,
+                                           preserve_sync=True)
+    except Exception as exc:
+        log.warning("Feed reconnect failed for slot %d: %s", req.slot, exc)
+        raise HTTPException(status_code=409, detail=str(exc))
     await broadcast("ingest:started", {
         "slot": new_feed.slot, "url": new_feed.url,
         "local_url": new_feed.obs_input_url,
@@ -880,9 +894,44 @@ async def obs_crop(req: CropApplyRequest) -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _sync_slot_of(source_name: str) -> int | None:
+    m = re.match(r'^Racer(\d+)_', source_name)
+    return int(m.group(1)) - 1 if m else None
+
+
+async def _apply_feed_sync(slot: int) -> None:
+    """On (re)provision: clear any app-side delay residue (old filter/offset).
+    The race-sync delay itself lives in the ingest relay, which is already at
+    the slot's stored value, so a freshly-read media source honors it."""
+    if not obs.connected:
+        return
+    try:
+        await obs.clear_app_delay(f"Racer{slot + 1}_Feed")
+    except Exception as exc:
+        log.warning("Failed to clear app delay for slot %d: %s", slot, exc)
+
+
 @app.post("/api/obs/sync")
 async def obs_sync(req: SyncNudgeRequest) -> dict[str, Any]:
-    new_ms = await obs.nudge_sync_offset(req.source_name, req.delta_ms)
+    """Nudge a racer's sync delay.
+
+    The delay is applied in the ingest pipeline: a per-slot UDP relay buffers
+    the whole stream, so audio and video shift together (never desync, no
+    popping).  Changing the delay restarts the media source so the streaming
+    app re-reads and adopts the new delay.
+    """
+    slot = _sync_slot_of(req.source_name)
+    if slot is None:
+        return {"status": "error", "error": f"Unknown sync target '{req.source_name}'"}
+    if not ingest.sync_supported:
+        return {"status": "error",
+                "error": "Sync requires UDP ingest (INGEST_PROTOCOL=udp)."}
+    new_ms = ingest.nudge_sync_delay(slot, req.delta_ms)
+    try:
+        if obs.connected:
+            await obs.restart_media_source(req.source_name)
+    except Exception as exc:
+        log.warning("Media restart failed for %s: %s", req.source_name, exc)
     await broadcast("sync:nudged", {
         "source": req.source_name, "delta_ms": req.delta_ms, "total_ms": new_ms,
     })
@@ -892,15 +941,11 @@ async def obs_sync(req: SyncNudgeRequest) -> dict[str, Any]:
 @app.get("/api/obs/sync")
 async def obs_sync_status(num_slots: int = 2) -> dict[str, Any]:
     """Return current sync delay for each racer slot."""
-    result = {}
-    for slot in range(num_slots):
-        src = f"Racer{slot + 1}_Feed"
-        try:
-            ms = await obs.get_sync_offset(src)
-            result[str(slot)] = {"source": src, "delay_ms": ms}
-        except Exception:
-            result[str(slot)] = {"source": src, "delay_ms": 0}
-    return result
+    return {
+        str(slot): {"source": f"Racer{slot + 1}_Feed",
+                    "delay_ms": ingest.get_sync_delay(slot)}
+        for slot in range(num_slots)
+    }
 
 
 @app.post("/api/obs/scene")
